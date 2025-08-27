@@ -1,57 +1,79 @@
+@import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
+/* Korean Work Management Design System */
 @layer base {
   :root {
+    /* Core palette - Professional blue theme */
     --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --foreground: 215 25% 25%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 215 25% 25%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 215 25% 25%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    /* Primary - Professional sky blue */
+    --primary: 200 98% 39%;
+    --primary-foreground: 0 0% 100%;
+    --primary-light: 200 85% 94%;
+    --primary-hover: 200 98% 35%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    /* Secondary - Neutral blue-gray */
+    --secondary: 214 32% 91%;
+    --secondary-foreground: 215 25% 25%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    /* Success - Professional emerald */
+    --success: 160 84% 39%;
+    --success-foreground: 0 0% 100%;
+    --success-light: 160 60% 94%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    /* Warning - Amber */
+    --warning: 43 96% 56%;
+    --warning-foreground: 0 0% 100%;
+    --warning-light: 43 96% 94%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    /* Danger - Professional rose */
+    --danger: 348 83% 47%;
+    --danger-foreground: 0 0% 100%;
+    --danger-light: 348 83% 94%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --muted: 214 32% 91%;
+    --muted-foreground: 215 16% 47%;
 
-    --radius: 0.5rem;
+    --accent: 200 85% 94%;
+    --accent-foreground: 200 98% 39%;
+
+    --destructive: 348 83% 47%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 200 98% 39%;
+
+    --radius: 0.75rem;
+
+    /* Work status colors */
+    --status-working: 160 84% 39%;
+    --status-ended: 215 16% 47%;
+    --status-pending: 43 96% 56%;
+
+    /* Calendar colors */
+    --calendar-today: 200 98% 39%;
+    --calendar-workday: 200 85% 94%;
+    --calendar-weekend: 348 83% 94%;
 
     --sidebar-background: 0 0% 98%;
-
     --sidebar-foreground: 240 5.3% 26.1%;
-
     --sidebar-primary: 240 5.9% 10%;
-
     --sidebar-primary-foreground: 0 0% 98%;
-
     --sidebar-accent: 240 4.8% 95.9%;
-
     --sidebar-accent-foreground: 240 5.9% 10%;
-
     --sidebar-border: 220 13% 91%;
-
     --sidebar-ring: 217.2 91.2% 59.8%;
   }
 
@@ -100,6 +122,60 @@ All colors MUST be HSL.
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-pretendard antialiased;
+  }
+}
+
+@layer components {
+  /* Korean-specific utilities */
+  .text-korean {
+    @apply font-pretendard leading-relaxed;
+  }
+
+  /* Status badge variants */
+  .badge-pending {
+    @apply bg-warning-light text-warning;
+  }
+  
+  .badge-approved {
+    @apply bg-success-light text-success;
+  }
+  
+  .badge-rejected {
+    @apply bg-danger-light text-danger;
+  }
+  
+  .badge-working {
+    @apply bg-success-light text-success;
+  }
+  
+  .badge-ended {
+    @apply bg-muted text-muted-foreground;
+  }
+  
+  .badge-not-started {
+    @apply bg-warning-light text-warning;
+  }
+
+  /* Calendar cell states */
+  .calendar-today {
+    @apply ring-2 ring-calendar-today bg-primary text-primary-foreground;
+  }
+  
+  .calendar-workday {
+    @apply bg-calendar-workday text-accent-foreground;
+  }
+  
+  .calendar-weekend {
+    @apply bg-calendar-weekend text-danger;
+  }
+
+  /* Quick action cards */
+  .action-card {
+    @apply bg-card border border-border rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow cursor-pointer;
+  }
+
+  .action-card:hover {
+    @apply shadow-lg border-primary/20;
   }
 }
