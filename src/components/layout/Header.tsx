@@ -1,9 +1,11 @@
 import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
+import { useNavigate } from 'react-router-dom';
 
 const Header: React.FC = () => {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   if (!user) return null;
 
@@ -12,7 +14,12 @@ const Header: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center space-x-4">
-            <h1 className="text-xl font-bold text-foreground">근무 시간 관리</h1>
+            <h1 
+              className="text-xl font-bold text-foreground cursor-pointer hover:text-primary transition-colors"
+              onClick={() => navigate('/')}
+            >
+              근무 시간 관리
+            </h1>
           </div>
           
           <div className="flex items-center space-x-4">
