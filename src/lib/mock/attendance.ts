@@ -1,4 +1,5 @@
-import { Attendance } from '@/types';
+import { Attendance, Shift } from '@/types';
+import { mockShifts } from './shifts';
 import { mockUsers } from './users';
 
 export let mockAttendance: Attendance[] = [
@@ -88,4 +89,8 @@ export const endWork = (userId: string): Attendance | null => {
   };
   
   return mockAttendance[index];
+};
+
+export const getShiftsByWorker = (workerId: string): Shift[] => {
+  return mockShifts.filter(shift => shift.workerId === workerId);
 };

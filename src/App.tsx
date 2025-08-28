@@ -50,7 +50,7 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRole="worker">
                   <Layout>
-                    <WorkerDashboard />
+                    <Home />
                   </Layout>
                 </ProtectedRoute>
               } 
@@ -60,7 +60,7 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRole="worker">
                   <Layout>
-                    <WorkerSchedule />
+                    <Home />
                   </Layout>
                 </ProtectedRoute>
               } 
@@ -82,7 +82,7 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRole="admin">
                   <Layout>
-                    <AdminDashboard />
+                    <Home />
                   </Layout>
                 </ProtectedRoute>
               } 
