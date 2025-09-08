@@ -52,8 +52,8 @@ const generateShifts = (): Shift[] => {
       shifts.push({
         id: `shift-${dateString}`,
         date: dateString,
-        start: '07:00',
-        end: '22:00',
+        start: '00:00',
+        end: '24:00',
         workerId,
         isWeekend: false
       });

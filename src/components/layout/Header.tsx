@@ -18,7 +18,7 @@ const Header: React.FC = () => {
               className="text-xl font-bold text-foreground cursor-pointer hover:text-primary transition-colors"
               onClick={() => navigate('/')}
             >
-              근무 시간 관리
+              HOLMZ
             </h1>
           </div>
           

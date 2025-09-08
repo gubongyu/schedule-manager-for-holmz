@@ -228,8 +228,8 @@ const Home: React.FC = () => {
         <Button onClick={() => navigate('/admin/attendance')} className="h-16">
           출퇴근 기록
         </Button>
-        <Button variant="outline" className="h-16">
-          보고서 생성
+        <Button onClick={() => navigate('/admin/reports')} className="h-16">
+          보고서
         </Button>
       </div>
     </div>

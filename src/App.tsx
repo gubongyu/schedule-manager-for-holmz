@@ -16,6 +16,7 @@ import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminWorkers from "./pages/admin/AdminWorkers";
 import AdminRequests from "./pages/admin/AdminRequests";
 import AdminAttendance from "./pages/admin/AdminAttendance";
+import AdminReport from "./pages/admin/AdminReport";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
 
@@ -117,6 +118,14 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
+
+            <Route
+              path="/admin/reports"
+              element={<ProtectedRoute requiredRole="admin">
+                  <Layout>
+                    <AdminReport />
+                  </Layout>
+                </ProtectedRoute>} />
             
             {/* Catch-all 404 route */}
             <Route path="*" element={<NotFound />} />
