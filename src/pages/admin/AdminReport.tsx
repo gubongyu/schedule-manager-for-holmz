@@ -1,12 +1,13 @@
-// src/pages/admin/MonthlyHoursReport.tsx
-import React, { useMemo, useState } from "react";
+// src/pages/admin/AdminReport.tsx
+import React, { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader, CardContent, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { getShiftsByMonth } from "@/lib/mock/shifts";
-import { mockUsers } from "@/lib/mock/users";
+import * as shiftApi from "@/lib/api/shifts";
+import { listWorkers } from "@/lib/api/users";
 
 type Shift = {
+  id?: number;
   date: string;     // 'YYYY-MM-DD'
   start: string;    // 'HH:MM'
   end: string;      // 'HH:MM'
@@ -34,12 +35,14 @@ const hhmmToMinutes = (t: string) => {
   if (h === 24 && m === 0) return 24 * 60;
   return h * 60 + m;
 };
+
 const diffMinutes = (start: string, end: string) => {
   const s = hhmmToMinutes(start);
   let e = hhmmToMinutes(end);
   if (e <= s) e += 24 * 60; // 자정 넘김(야간) 처리
   return e - s;
 };
+
 const minutesToHHhMM = (mins: number) => {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
@@ -61,25 +64,57 @@ const generateMonthOptions = () => {
 
 const MonthlyHoursReport: React.FC = () => {
   const [monthKey, setMonthKey] = useState<string>(getLocalMonthKey(new Date()));
-
-  const monthShifts = useMemo(() => (getShiftsByMonth(monthKey) as Shift[]) ?? [], [monthKey]);
+  const [monthShifts, setMonthShifts] = useState<Shift[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   // 근무자 맵 (id → {name, department})
+  const [workers, setWorkers] = useState<Array<{ id: string; name: string; department?: string }>>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const ws = await listWorkers();
+        const normalized = ws.map((w: any) => ({
+          id: w.id,
+          name: w.name ?? w.username ?? "이름없음",
+          department: w.department,
+        }));
+        setWorkers(normalized);
+      } catch (e) {
+        // 이름 매핑 실패해도 보고서 집계는 진행됨
+        console.error(e);
+      }
+    })();
+  }, []);
+
   const userMap = useMemo(() => {
     const map = new Map<string, { name: string; department?: string }>();
-    mockUsers.forEach(u => {
-      if (u.role === "worker") {
-        map.set(u.id, { name: u.name, department: (u as any).department });
-      }
-    });
+    workers.forEach((u) => map.set(u.id, { name: u.name, department: u.department }));
     return map;
-  }, []);
+  }, [workers]);
+
+  // 월별 시프트 로드
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      setErr(null);
+      try {
+        const rows = await shiftApi.getShiftsByMonth(monthKey);
+        setMonthShifts(rows ?? []);
+      } catch (e: any) {
+        setErr(e?.message ?? "근무표를 불러오지 못했습니다.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [monthKey]);
 
   const rows = useMemo<Row[]>(() => {
     const acc = new Map<string, Row>();
 
     for (const s of monthShifts) {
-      const wId = s.workerId ?? ""; // workerId가 없으면 스킵(미배정)
+      const wId = s.workerId ?? ""; // 미배정은 카운트 제외
       if (!wId) continue;
 
       const addMin = diffMinutes(s.start, s.end);
@@ -103,7 +138,7 @@ const MonthlyHoursReport: React.FC = () => {
 
   const exportCSV = () => {
     const header = ["workerId", "name", "department", "shifts", "total_minutes", "total_hours"];
-    const body = rows.map(r => [
+    const body = rows.map((r) => [
       r.workerId,
       r.name,
       r.department ?? "",
@@ -111,7 +146,9 @@ const MonthlyHoursReport: React.FC = () => {
       String(r.minutes),
       (r.minutes / 60).toFixed(2),
     ]);
-    const data = [header, ...body].map(line => line.map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const data = [header, ...body]
+      .map((line) => line.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
     const blob = new Blob([data], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -132,18 +169,24 @@ const MonthlyHoursReport: React.FC = () => {
                 <SelectValue placeholder="월 선택" />
               </SelectTrigger>
               <SelectContent>
-                {generateMonthOptions().map(opt => (
+                {generateMonthOptions().map((opt) => (
                   <SelectItem key={opt.value} value={opt.value}>
                     {opt.label}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" onClick={exportCSV}>CSV 내보내기</Button>
+            <Button variant="outline" onClick={exportCSV}>
+              CSV 내보내기
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
-          {rows.length === 0 ? (
+          {loading ? (
+            <div className="text-sm text-muted-foreground">불러오는 중...</div>
+          ) : err ? (
+            <div className="text-sm text-destructive">{err}</div>
+          ) : rows.length === 0 ? (
             <div className="text-sm text-muted-foreground">해당 월에 집계할 근무가 없습니다.</div>
           ) : (
             <div className="overflow-x-auto">
@@ -158,17 +201,21 @@ const MonthlyHoursReport: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(r => (
+                  {rows.map((r) => (
                     <tr key={r.workerId} className="hover:bg-muted/50">
                       <td className="px-3 py-2 border-b border-border">{r.name}</td>
                       <td className="px-3 py-2 border-b border-border">{r.department ?? "-"}</td>
                       <td className="px-3 py-2 border-b border-border">{r.shifts}</td>
                       <td className="px-3 py-2 border-b border-border font-medium">{minutesToHHhMM(r.minutes)}</td>
-                      <td className="px-3 py-2 border-b border-border">{minutesToHHhMM(Math.round(r.minutes / Math.max(1, r.shifts)))}</td>
+                      <td className="px-3 py-2 border-b border-border">
+                        {minutesToHHhMM(Math.round(r.minutes / Math.max(1, r.shifts)))}
+                      </td>
                     </tr>
                   ))}
                   <tr className="bg-muted/40 font-semibold">
-                    <td className="px-3 py-2 border-t border-border" colSpan={3}>합계</td>
+                    <td className="px-3 py-2 border-t border-border" colSpan={3}>
+                      합계
+                    </td>
                     <td className="px-3 py-2 border-t border-border">{minutesToHHhMM(totalMinutes)}</td>
                     <td className="px-3 py-2 border-t border-border">–</td>
                   </tr>

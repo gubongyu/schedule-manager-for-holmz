@@ -1,30 +1,55 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from '@/hooks/use-toast';
-import { mockSubstitutions, updateSubstitutionStatus } from '@/lib/mock/substitutions';
+import * as subsApi from '@/lib/api/substitutions';
+
+type Status = 'pending' | 'approved' | 'rejected';
 
 const AdminRequests: React.FC = () => {
-  const [isLoading, setIsLoading] = useState<string | null>(null);
+  const [rows, setRows] = useState<subsApi.SubstitutionRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+  const [isLoadingId, setIsLoadingId] = useState<string | number | null>(null);
 
-  const handleApproval = async (requestId: string, action: 'approved' | 'rejected') => {
-    setIsLoading(requestId);
+  const load = async () => {
+    setLoading(true);
+    setErr(null);
     try {
-      // Simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      updateSubstitutionStatus(requestId, action);
-      
-      toast({
-        title: action === 'approved' ? "승인 완료" : "반려 완료",
-        description: action === 'approved' ? "승인되었습니다." : "반려되었습니다."
-      });
-      
-      // Force re-render
-      window.location.reload();
+      const data = await subsApi.listSubstitutions();
+      setRows(data ?? []);
+    } catch (e: any) {
+      setErr(e?.message ?? '요청을 불러오지 못했습니다.');
     } finally {
-      setIsLoading(null);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  const handleApproval = async (requestId: string | number, action: Status) => {
+    setIsLoadingId(requestId);
+    try {
+      await subsApi.updateSubstitutionStatus(String(requestId), action);
+      // 로컬 상태 업데이트 (새로고침 없이 반영)
+      setRows(prev =>
+        prev.map(r => (r.id === requestId ? { ...r, status: action } : r))
+      );
+      toast({
+        title: action === 'approved' ? '승인 완료' : '반려 완료',
+        description: action === 'approved' ? '승인되었습니다.' : '반려되었습니다.',
+      });
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: '처리 실패',
+        description: e?.message ?? '요청 처리 중 오류가 발생했습니다.',
+      });
+    } finally {
+      setIsLoadingId(null);
     }
   };
 
@@ -46,8 +71,14 @@ const AdminRequests: React.FC = () => {
     }
   };
 
-  const pendingRequests = mockSubstitutions.filter(req => req.status === 'pending');
-  const processedRequests = mockSubstitutions.filter(req => req.status !== 'pending');
+  const pendingRequests = useMemo(
+    () => rows.filter(req => req.status === 'pending'),
+    [rows]
+  );
+  const processedRequests = useMemo(
+    () => rows.filter(req => req.status !== 'pending'),
+    [rows]
+  );
 
   return (
     <div className="space-y-8">
@@ -60,8 +91,15 @@ const AdminRequests: React.FC = () => {
 
       {/* Pending Requests */}
       <div>
-        <h2 className="text-xl font-semibold mb-4">승인 대기 중인 요청 ({pendingRequests.length}건)</h2>
-        {pendingRequests.length > 0 ? (
+        <h2 className="text-xl font-semibold mb-4">
+          승인 대기 중인 요청 ({loading ? '-' : pendingRequests.length}건)
+        </h2>
+
+        {loading ? (
+          <Card><CardContent className="py-12 text-center text-muted-foreground">불러오는 중...</CardContent></Card>
+        ) : err ? (
+          <Card><CardContent className="py-12 text-center text-destructive">{err}</CardContent></Card>
+        ) : pendingRequests.length > 0 ? (
           <div className="space-y-4">
             {pendingRequests.map((request) => (
               <Card key={request.id}>
@@ -71,39 +109,39 @@ const AdminRequests: React.FC = () => {
                       <h3 className="font-medium">{request.ownerName}</h3>
                       <p className="text-sm text-muted-foreground">요청자</p>
                     </div>
-                    
+
                     <div>
                       <p className="font-medium">{request.date}</p>
                       <p className="text-sm text-muted-foreground">{request.timeRange}</p>
                     </div>
-                    
+
                     <div>
                       <Badge variant={getStatusVariant(request.status)}>
                         {getStatusText(request.status)}
                       </Badge>
-                      {request.applicants.length > 0 && (
+                      {request.applicants?.length > 0 && (
                         <p className="text-sm text-muted-foreground mt-1">
                           신청자: {request.applicants.map(a => a.name).join(', ')}
                         </p>
                       )}
                     </div>
-                    
+
                     <div className="flex space-x-2">
-                      <Button 
-                        variant="success" 
+                      <Button
+                        variant="success"
                         size="sm"
                         onClick={() => handleApproval(request.id, 'approved')}
-                        disabled={isLoading === request.id}
+                        disabled={isLoadingId === request.id}
                       >
-                        {isLoading === request.id ? '처리 중...' : '승인'}
+                        {isLoadingId === request.id ? '처리 중...' : '승인'}
                       </Button>
-                      <Button 
-                        variant="danger" 
+                      <Button
+                        variant="danger"
                         size="sm"
                         onClick={() => handleApproval(request.id, 'rejected')}
-                        disabled={isLoading === request.id}
+                        disabled={isLoadingId === request.id}
                       >
-                        {isLoading === request.id ? '처리 중...' : '반려'}
+                        {isLoadingId === request.id ? '처리 중...' : '반려'}
                       </Button>
                     </div>
                   </div>
@@ -112,18 +150,23 @@ const AdminRequests: React.FC = () => {
             ))}
           </div>
         ) : (
-          <Card>
-            <CardContent className="text-center py-12">
-              <p className="text-muted-foreground">승인 대기 중인 요청이 없습니다.</p>
-            </CardContent>
-          </Card>
+          <Card><CardContent className="text-center py-12">
+            <p className="text-muted-foreground">승인 대기 중인 요청이 없습니다.</p>
+          </CardContent></Card>
         )}
       </div>
 
       {/* Processed Requests */}
       <div>
-        <h2 className="text-xl font-semibold mb-4">처리 완료된 요청 ({processedRequests.length}건)</h2>
-        {processedRequests.length > 0 ? (
+        <h2 className="text-xl font-semibold mb-4">
+          처리 완료된 요청 ({loading ? '-' : processedRequests.length}건)
+        </h2>
+
+        {loading ? (
+          <Card><CardContent className="py-12 text-center text-muted-foreground">불러오는 중...</CardContent></Card>
+        ) : err ? (
+          <Card><CardContent className="py-12 text-center text-destructive">{err}</CardContent></Card>
+        ) : processedRequests.length > 0 ? (
           <div className="space-y-4">
             {processedRequests.map((request) => (
               <Card key={request.id}>
@@ -133,23 +176,23 @@ const AdminRequests: React.FC = () => {
                       <h3 className="font-medium">{request.ownerName}</h3>
                       <p className="text-sm text-muted-foreground">요청자</p>
                     </div>
-                    
+
                     <div>
                       <p className="font-medium">{request.date}</p>
                       <p className="text-sm text-muted-foreground">{request.timeRange}</p>
                     </div>
-                    
+
                     <div>
                       <Badge variant={getStatusVariant(request.status)}>
                         {getStatusText(request.status)}
                       </Badge>
-                      {request.applicants.length > 0 && (
+                      {request.applicants?.length > 0 && (
                         <p className="text-sm text-muted-foreground mt-1">
                           신청자: {request.applicants.map(a => a.name).join(', ')}
                         </p>
                       )}
                     </div>
-                    
+
                     <div>
                       <p className="text-sm text-muted-foreground">
                         {new Date(request.createdAt).toLocaleDateString('ko-KR')} 처리
@@ -161,41 +204,41 @@ const AdminRequests: React.FC = () => {
             ))}
           </div>
         ) : (
-          <Card>
-            <CardContent className="text-center py-12">
-              <p className="text-muted-foreground">처리된 요청이 없습니다.</p>
-            </CardContent>
-          </Card>
+          <Card><CardContent className="text-center py-12">
+            <p className="text-muted-foreground">처리된 요청이 없습니다.</p>
+          </CardContent></Card>
         )}
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card>
-          <CardContent className="p-6 text-center">
-            <p className="text-2xl font-bold text-warning">{pendingRequests.length}</p>
-            <p className="text-sm text-muted-foreground">승인 대기</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6 text-center">
-            <p className="text-2xl font-bold text-success">
-              {processedRequests.filter(r => r.status === 'approved').length}
-            </p>
-            <p className="text-sm text-muted-foreground">승인 완료</p>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6 text-center">
-            <p className="text-2xl font-bold text-danger">
-              {processedRequests.filter(r => r.status === 'rejected').length}
-            </p>
-            <p className="text-sm text-muted-foreground">반려</p>
-          </CardContent>
-        </Card>
-      </div>
+      {!loading && !err && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="p-6 text-center">
+              <p className="text-2xl font-bold text-warning">{pendingRequests.length}</p>
+              <p className="text-sm text-muted-foreground">승인 대기</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6 text-center">
+              <p className="text-2xl font-bold text-success">
+                {processedRequests.filter(r => r.status === 'approved').length}
+              </p>
+              <p className="text-sm text-muted-foreground">승인 완료</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6 text-center">
+              <p className="text-2xl font-bold text-danger">
+                {processedRequests.filter(r => r.status === 'rejected').length}
+              </p>
+              <p className="text-sm text-muted-foreground">반려</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 };

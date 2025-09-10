@@ -3,7 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { getShiftsByWorker, getShiftsByMonth } from '@/lib/mock/shifts';
+import { getShiftsByWorker, getShiftsByMonth } from '@/lib/api/shifts';
 
 const WorkerSchedule: React.FC = () => {
   const { user } = useAuth();

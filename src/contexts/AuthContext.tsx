@@ -1,90 +1,111 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, AuthState } from '@/types';
-import { mockUsers } from '@/lib/mock/users';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { supabase } from '@/lib/supabaseClient';
 
-interface AuthContextType extends AuthState {
-  login: (id: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
-}
+type Role = 'admin' | 'worker';
+
+type AppUser = {
+  id: string;
+  email: string | null;
+  username: string;
+  role: Role;
+  department?: string | null;
+};
+
+type LoginResult = { success: true } | { success: false; error?: string };
+
+type AuthContextType = {
+  user: AppUser | null;
+  isAuthenticated: boolean;
+  login: (idOrEmail: string, password: string) => Promise<LoginResult>;
+  logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
+};
 
 const AuthContext = createContext<AuthContextType | null>(null);
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
-
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    token: null,
-    isAuthenticated: false
-  });
+  const [user, setUser] = useState<AppUser | null>(null);
+
+  const loadProfile = async (uid: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('id, username, role, department')
+      .eq('id', uid)
+      .maybeSingle();
+
+    if (error) throw error;
+    const auth = (await supabase.auth.getUser()).data.user;
+    if (!auth) return setUser(null);
+    if (!data) return setUser(null);
+
+    setUser({
+      id: uid,
+      email: auth.email ?? null,
+      username: data.username,
+      role: data.role as Role,
+      department: data.department ?? null,
+    });
+  };
+
+  const login = async (idOrEmail: string, password: string): Promise<LoginResult> => {
+    try {
+      let email = idOrEmail;
+      if (!idOrEmail.includes('@')) {
+        const { data, error } = await supabase.rpc('get_email_for_username', { p_username: idOrEmail });
+        if (error) throw error;
+        if (!data) return { success: false, error: '해당 아이디의 이메일을 찾지 못했습니다.' };
+        email = data as string;
+      }
+
+      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInErr) return { success: false, error: signInErr.message };
+
+      const uid = signInData.user?.id;
+      if (!uid) return { success: false, error: '인증 정보가 유효하지 않습니다.' };
+      await loadProfile(uid);
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, error: e?.message ?? '로그인 실패' };
+    }
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+  };
+
+  const refreshProfile = async () => {
+    const { data } = await supabase.auth.getUser();
+    if (data.user) await loadProfile(data.user.id);
+  };
 
   useEffect(() => {
-    // Check for stored auth data on mount
-    const storedToken = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user');
-    
-    if (storedToken && storedUser) {
-      try {
-        const user = JSON.parse(storedUser);
-        setAuthState({
-          user,
-          token: storedToken,
-          isAuthenticated: true
-        });
-      } catch (error) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-      }
-    }
+    // 초기 세션 + 구독
+    const init = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data.user) await loadProfile(data.user.id);
+    };
+    init();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      const uid = session?.user?.id;
+      if (uid) loadProfile(uid);
+      else setUser(null);
+    });
+    return () => {
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
-  const login = async (id: string, password: string): Promise<{ success: boolean; error?: string }> => {
-    // Mock login validation
-    if ((id === 'worker1' && password === '1234') || (id === 'admin' && password === 'admin')) {
-      const user = mockUsers.find(u => u.id === id);
-      if (user) {
-        const token = `mock-token-${Date.now()}`;
-        
-        setAuthState({
-          user,
-          token,
-          isAuthenticated: true
-        });
-        
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(user));
-        
-        return { success: true };
-      }
-    }
-    
-    return { success: false, error: '아이디 또는 비밀번호를 확인하세요.' };
-  };
+  const value = useMemo<AuthContextType>(() => ({
+    user, isAuthenticated: !!user, login, logout, refreshProfile
+  }), [user]);
 
-  const logout = () => {
-    setAuthState({
-      user: null,
-      token: null,
-      isAuthenticated: false
-    });
-    
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-  };
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+};
 
-  return (
-    <AuthContext.Provider value={{
-      ...authState,
-      login,
-      logout
-    }}>
-      {children}
-    </AuthContext.Provider>
-  );
+export const useAuth = () => {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider');
+  return ctx;
 };

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,20 +6,30 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ChevronLeft, ChevronRight, Calendar, Users } from 'lucide-react';
-import { getShiftsByMonth } from '@/lib/mock/shifts';
-import { mockUsers } from '@/lib/mock/users';
+import * as shiftApi from '@/lib/api/shifts';
+import { listWorkers } from '@/lib/api/users';
 import { toast } from '@/hooks/use-toast';
 
-interface Shift {
+type Role = 'worker' | 'admin';
+
+type Shift = {
+  id?: number;
   date: string;   // 'YYYY-MM-DD'
   start: string;  // 'HH:MM'
   end: string;    // 'HH:MM'
   workerId?: string;
   workerName?: string;
-}
+};
+
+type Worker = {
+  id: string;
+  name: string;
+  role: Role;
+  department?: string;
+};
 
 interface WorkScheduleCalendarProps {
-  userRole: 'worker' | 'admin';
+  userRole: Role;
   userId?: string;
   myShifts?: Shift[];
   className?: string;
@@ -33,6 +43,12 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
 }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewType, setViewType] = useState<'month' | 'week'>('month');
+
+  // ---- API 로드 상태 ----
+  // 월별 시프트 캐시: { 'YYYY-MM': Shift[] }
+  const [shiftsByMonth, setShiftsByMonth] = useState<Record<string, Shift[]>>({});
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [loadingMonths, setLoadingMonths] = useState<Set<string>>(new Set());
 
   // 주간 드래그 배정 모달
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
@@ -65,21 +81,85 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
   };
 
   const currentMonth = getLocalMonthKey(currentDate);
-  const monthShifts = getShiftsByMonth(currentMonth) as Shift[];
   const today = getLocalDateKey(new Date());
 
-  const goToPreviousMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
-  };
-  const goToNextMonth = () => {
-    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
-  };
-  const handleMonthSelect = (value: string) => {
-    const [year, month] = value.split('-').map(Number);
-    setCurrentDate(new Date(year, month - 1, 1));
-  };
+  // ---- 초기 로드: 근무자 목록 ----
+  useEffect(() => {
+    (async () => {
+      try {
+        const ws = await listWorkers();
+        // API가 {id, username, role, department}를 줄 수도 있으니 name 필드 정규화
+        const normalized = ws.map((w: any) => ({
+          id: w.id,
+          name: w.name ?? w.username ?? '이름없음',
+          role: w.role as Role,
+          department: w.department
+        })) as Worker[];
+        setWorkers(normalized);
+      } catch (e) {
+        // 근무자 목록 실패해도 치명적이진 않음(이름 매핑만 영향)
+        console.error(e);
+      }
+    })();
+  }, []);
 
-  // === 유틸 ===
+  // ---- 필요한 월 데이터 로드 (월간/주간 뷰에 따라) ----
+  const weekMonthKeys = useMemo(() => {
+    if (viewType !== 'week') return [currentMonth];
+    const startOfWeek = new Date(currentDate);
+    const dow = startOfWeek.getDay();
+    startOfWeek.setDate(startOfWeek.getDate() - dow);
+
+    const keys = new Set<string>();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(startOfWeek);
+      d.setDate(startOfWeek.getDate() + i);
+      keys.add(getLocalMonthKey(d));
+    }
+    return Array.from(keys);
+  }, [currentDate, viewType]);
+
+  // 월 데이터 비동기 로드 (캐시 미스만)
+  useEffect(() => {
+    const toLoad = weekMonthKeys.filter(k => !(k in shiftsByMonth) && !loadingMonths.has(k));
+    if (toLoad.length === 0) return;
+
+    const nextLoading = new Set(loadingMonths);
+    toLoad.forEach(k => nextLoading.add(k));
+    setLoadingMonths(nextLoading);
+
+    (async () => {
+      try {
+        const entries = await Promise.all(
+          toLoad.map(async (k) => {
+            const rows = await shiftApi.getShiftsByMonth(k);
+            return [k, rows] as const;
+          })
+        );
+        setShiftsByMonth(prev => {
+          const copy = { ...prev };
+          for (const [k, rows] of entries) copy[k] = rows;
+          return copy;
+        });
+      } catch (e) {
+        console.error(e);
+        toast({ variant: 'destructive', title: '근무표 로드 실패', description: '시프트 데이터를 불러오지 못했습니다.' });
+      } finally {
+        setLoadingMonths(prev => {
+          const copy = new Set(prev);
+          toLoad.forEach(k => copy.delete(k));
+          return copy;
+        });
+      }
+    })();
+  }, [weekMonthKeys, shiftsByMonth, loadingMonths, toast]);
+
+  // ---- 헬퍼 ----
+  const getMonthShifts = (monthKey: string) => shiftsByMonth[monthKey] ?? [];
+
+  const findWorker = (workerId?: string) =>
+    workers.find(w => w.id === workerId);
+
   const timeToMinutes = (t: string) => {
     const [h, m] = t.split(':').map(Number);
     return h * 60 + m;
@@ -120,33 +200,67 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
     return colorPalette[idx];
   };
 
-  // 월간 일일 모달용: 날짜별 스케줄
+  // ---- 월간 모달용: 날짜별 스케줄(월 캐시 + myShifts 병합) ----
   const getShiftsByDate = (date: string): Shift[] => {
-    const monthMatches = monthShifts.filter(s => s.date === date);
+    const monthKey = date.slice(0, 7);
+    const monthMatches = getMonthShifts(monthKey).filter(s => s.date === date);
     const mine = myShifts.filter(s => s.date === date);
     const all = [...monthMatches, ...mine];
     return all.map(s => {
       if (!s.workerName && s.workerId) {
-        const u = mockUsers.find(mu => mu.id === s.workerId);
+        const u = findWorker(s.workerId);
         return { ...s, workerName: u?.name ?? '미상' };
       }
       return s;
     });
   };
 
-  const handleAssignWorker = () => {
-    if (!selectedDate || !selectedWorker || userRole !== 'admin') return;
-    const worker = mockUsers.find(u => u.id === selectedWorker);
-    const timeLabel = selectedStartTime && selectedEndTime ? `${selectedStartTime} - ${selectedEndTime}` : '시간 미지정';
-    toast({
-      title: '근무자 배정 완료',
-      description: `${worker?.name}님이 ${selectedDate} ${timeLabel}에 배정되었습니다.`,
-    });
-    setSelectedDate(null);
-    setSelectedWorker('');
-    setSelectedStartTime(null);
-    setSelectedEndTime(null);
-    setIsAssignDialogOpen(false);
+  const goToPreviousMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+  };
+  const goToNextMonth = () => {
+    setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+  };
+  const handleMonthSelect = (value: string) => {
+    const [year, month] = value.split('-').map(Number);
+    setCurrentDate(new Date(year, month - 1, 1));
+  };
+
+  // ---- 배정 저장 ----
+  const handleAssignWorker = async () => {
+    if (!selectedDate || !selectedWorker) return;
+    if (!selectedStartTime || !selectedEndTime) {
+      toast({ variant: 'destructive', title: '시간 선택 필요', description: '드래그로 시간 범위를 먼저 선택하세요.' });
+      return;
+    }
+
+    try {
+      await shiftApi.assignShift({
+        date: selectedDate,
+        start: selectedStartTime,
+        end: selectedEndTime,
+        workerId: selectedWorker,
+      });
+
+      toast({
+        title: '근무자 배정 완료',
+        description: `${findWorker(selectedWorker)?.name ?? selectedWorker}님이 ${selectedDate} ${selectedStartTime} - ${selectedEndTime}에 배정되었습니다.`,
+      });
+
+      // 해당 월만 재조회
+      const monthKey = selectedDate.slice(0, 7);
+      const fresh = await shiftApi.getShiftsByMonth(monthKey);
+      setShiftsByMonth(prev => ({ ...prev, [monthKey]: fresh }));
+
+      // 모달/선택 초기화
+      setSelectedDate(null);
+      setSelectedWorker('');
+      setSelectedStartTime(null);
+      setSelectedEndTime(null);
+      setIsAssignDialogOpen(false);
+    } catch (e: any) {
+      toast({ variant: 'destructive', title: '배정 실패', description: e?.message ?? '저장 중 오류가 발생했습니다.' });
+    }
   };
 
   // === 월간 ===
@@ -161,6 +275,8 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
     const weeks: JSX.Element[] = [];
     const days = ['일', '월', '화', '수', '목', '금', '토'];
 
+    const monthData = getMonthShifts(currentMonth);
+
     for (let week = 0; week < 6; week++) {
       const weekDays: JSX.Element[] = [];
       for (let day = 0; day < 7; day++) {
@@ -172,7 +288,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
         const isCurrentMonth = currentDay.getMonth() === month;
         const isToday = dateString === today;
         const myShift = Array.isArray(myShifts) ? myShifts.find(shift => shift.date === dateString) : null;
-        const monthShift = monthShifts.find(shift => shift.date === dateString);
+        const monthShift = monthData.find(shift => shift.date === dateString);
         const isWeekend = day === 0 || day === 6;
 
         weekDays.push(
@@ -249,10 +365,8 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
       dateString: string;
       dayName: string;
       isToday: boolean;
-      // 관리자용: 해당 날짜의 모든 배정(여러 개 가능)
-      assignedShifts: Shift[];
-      // 근무자용: 내 근무(있다면 1개 가정)
-      myShift?: Shift | null;
+      assignedShifts: Shift[]; // 관리자용: 해당 날짜의 배정들(여러 개 가능)
+      myShift?: Shift | null;  // 근무자용: 내 근무(있을 수도/없을 수도)
     };
 
     const weekDays: WeekDay[] = [];
@@ -262,17 +376,18 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
       const dateString = getLocalDateKey(day);
       const isToday = dateString === today;
 
-      // 관리자: 그 날짜의 모든 배정 가져오기
-      const adminShiftsRaw = (getShiftsByMonth(getLocalMonthKey(day)) as Shift[]).filter(s => s.date === dateString);
+      // 이 날짜가 속한 월의 캐시에서 배정 가져오기 (렌더 중 API 호출 금지)
+      const monthKey = getLocalMonthKey(day);
+      const monthData = getMonthShifts(monthKey);
+      const adminShiftsRaw = monthData.filter(s => s.date === dateString);
       const adminShifts = adminShiftsRaw.map(s => {
         if (!s.workerName && s.workerId) {
-          const u = mockUsers.find(mu => mu.id === s.workerId);
+          const u = findWorker(s.workerId);
           return { ...s, workerName: u?.name ?? '미상' };
         }
         return s;
       });
 
-      // 근무자: 내 근무 1개(있을 수도/없을 수도)
       const myShift = Array.isArray(myShifts) ? myShifts.find(s => s.date === dateString) : null;
 
       weekDays.push({
@@ -349,7 +464,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
               </div>
 
               {weekDays.map(({ dateString, assignedShifts, myShift }) => {
-                // 근무자 모드: 기존 파랑 처리 유지
+                // 근무자 모드
                 if (userRole === 'worker') {
                   const active = isWithinShift(time, myShift || undefined);
                   return (
@@ -373,18 +488,14 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
                 // 관리자 모드: 해당 시간대에 매칭되는 배정들
                 const matching = assignedShifts.filter(s => isWithinShift(time, s));
                 let cellClass = 'p-2 h-12 border-r border-border last:border-r-0 cursor-pointer hover:bg-muted/50';
-
-                // 기본 배경: 드래그 중이면 outline로 표시
                 let innerBadge: React.ReactNode = null;
 
                 if (matching.length > 0) {
-                  // 첫 번째 근무자 색상으로 칠함
                   const s0 = matching[0];
                   const workerKey = s0.workerId || s0.workerName || 'unknown';
                   const color = colorForWorker(workerKey);
                   cellClass += ` ${color.bg} ${color.text}`;
 
-                  // 시작 슬롯이면 이름 배지 + 동시 배정 카운트
                   if (time === (s0.start || '00:00')) {
                     innerBadge = (
                       <div className="flex items-center justify-center gap-1">
@@ -399,7 +510,6 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
                   }
                 }
 
-                // 드래그 강조 (색 위에 외곽선)
                 const dragActive = isWithinDrag(dateString, time);
                 if (dragActive) {
                   cellClass += ' outline outline-2 outline-blue-400';
@@ -610,18 +720,22 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
                     <SelectValue placeholder="근무자를 선택하세요" />
                   </SelectTrigger>
                   <SelectContent>
-                    {mockUsers.filter(u => u.role === 'worker').map(worker => (
-                      <SelectItem key={worker.id} value={worker.id}>
-                        {worker.name} ({worker.department})
-                      </SelectItem>
-                    ))}
+                    {workers
+                      .filter(w => w.role === 'worker')
+                      .map(w => (
+                        <SelectItem key={w.id} value={w.id}>
+                          {w.name}{w.department ? ` (${w.department})` : ''}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>
 
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setIsAssignDialogOpen(false)}>취소</Button>
-                <Button onClick={handleAssignWorker} disabled={!selectedWorker}>저장</Button>
+                <Button onClick={handleAssignWorker} disabled={!selectedWorker || !selectedStartTime || !selectedEndTime}>
+                  저장
+                </Button>
               </div>
             </div>
           </DialogContent>
