@@ -26,11 +26,11 @@ const Header: React.FC = () => {
             <div className="flex items-center space-x-2">
               <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
                 <span className="text-primary-foreground text-sm font-semibold">
-                  {user.name.charAt(0)}
+                  {user.username}
                 </span>
               </div>
               <div className="text-sm">
-                <div className="font-medium text-foreground">{user.name}</div>
+                <div className="font-medium text-foreground">{user.username}</div>
                 <div className="text-muted-foreground">
                   {user.role === 'admin' ? '관리자' : '근무자'}
                 </div>

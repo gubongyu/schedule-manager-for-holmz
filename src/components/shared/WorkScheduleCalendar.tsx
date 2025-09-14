@@ -226,6 +226,22 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
     setCurrentDate(new Date(year, month - 1, 1));
   };
 
+  // ---- 주 단위 이동 (신규) ----
+  const goToPreviousWeek = () => {
+    setCurrentDate(prev => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() - 7);
+      return d;
+    });
+  };
+  const goToNextWeek = () => {
+    setCurrentDate(prev => {
+      const d = new Date(prev);
+      d.setDate(d.getDate() + 7);
+      return d;
+    });
+  };
+
   // ---- 배정 저장 ----
   const handleAssignWorker = async () => {
     if (!selectedDate || !selectedWorker) return;
@@ -624,33 +640,22 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
             <TabsContent value="week">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-4">
-                  <Button variant="outline" size="sm" onClick={goToPreviousMonth} className="h-8 w-8 p-0">
+                  {/* ✅ 주간 이동: 1주씩 */}
+                  <Button variant="outline" size="sm" onClick={goToPreviousWeek} className="h-8 w-8 p-0">
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
 
-                  <Select value={getLocalMonthKey(currentDate)} onValueChange={handleMonthSelect}>
-                    <SelectTrigger className="w-40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {generateMonthOptions().map(option => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-                  {/* 몇월 몇째 주 */}
+                  {/* ✅ 월 선택 셀렉트 제거, 주차 텍스트만 노출 */}
                   <span className="text-sm text-muted-foreground">{weekMeta.text}</span>
 
-                  <Button variant="outline" size="sm" onClick={goToNextMonth} className="h-8 w-8 p-0">
+                  <Button variant="outline" size="sm" onClick={goToNextWeek} className="h-8 w-8 p-0">
                     <ChevronRight className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
               {renderWeekView()}
             </TabsContent>
+
           </Tabs>
         </CardContent>
       </Card>

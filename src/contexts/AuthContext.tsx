@@ -26,11 +26,11 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AppUser | null>(null);
 
-  const loadProfile = async (uid: string) => {
+  const loadProfile = async (authId: string) => {
     const { data, error } = await supabase
       .from('profiles')
       .select('id, username, role, department')
-      .eq('id', uid)
+      .eq('auth_id', authId)
       .maybeSingle();
 
     if (error) throw error;
@@ -39,7 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!data) return setUser(null);
 
     setUser({
-      id: uid,
+      id: data.id,
       email: auth.email ?? null,
       username: data.username,
       role: data.role as Role,

@@ -147,34 +147,6 @@ const Login: React.FC = () => {
               </Button>
             </form>
 
-            {/* 빠른 로그인 */}
-            <div className="mt-6 pt-6 border-t border-border">
-              <p className="text-sm text-muted-foreground text-center mb-4">
-                빠른 로그인
-              </p>
-              <div className="space-y-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full justify-between"
-                  onClick={() => handleQuickLogin("worker")}
-                  disabled={isLoading}
-                >
-                  <span>근무자 로그인 (worker1 / 1234)</span>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full justify-between"
-                  onClick={() => handleQuickLogin("admin")}
-                  disabled={isLoading}
-                >
-                  <span>관리자 로그인 (admin / admin)</span>
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
 
             {/* 하단 정보 */}
             <div className="mt-6 text-center">
