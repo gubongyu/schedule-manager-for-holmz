@@ -1,3 +1,4 @@
+// WorkScheduleCalendar.tsx
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -45,7 +46,6 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
   const [viewType, setViewType] = useState<'month' | 'week'>('month');
 
   // ---- API 로드 상태 ----
-  // 월별 시프트 캐시: { 'YYYY-MM': Shift[] }
   const [shiftsByMonth, setShiftsByMonth] = useState<Record<string, Shift[]>>({});
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loadingMonths, setLoadingMonths] = useState<Set<string>>(new Set());
@@ -88,7 +88,6 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
     (async () => {
       try {
         const ws = await listWorkers();
-        // API가 {id, username, role, department}를 줄 수도 있으니 name 필드 정규화
         const normalized = ws.map((w: any) => ({
           id: w.id,
           name: w.name ?? w.username ?? '이름없음',
@@ -97,7 +96,6 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
         })) as Worker[];
         setWorkers(normalized);
       } catch (e) {
-        // 근무자 목록 실패해도 치명적이진 않음(이름 매핑만 영향)
         console.error(e);
       }
     })();
@@ -178,7 +176,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
     return t >= minT && t < maxT; // [start, end)
   };
 
-  // workerId → 색상 클래스 매핑 (고정 팔레트)
+  // workerId → 색상 클래스 매핑
   const colorPalette = [
     { bg: 'bg-rose-600', light: 'bg-rose-500/25', text: 'text-white' },
     { bg: 'bg-emerald-600', light: 'bg-emerald-500/25', text: 'text-white' },
@@ -226,7 +224,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
     setCurrentDate(new Date(year, month - 1, 1));
   };
 
-  // ---- 주 단위 이동 (신규) ----
+  // ---- 주 단위 이동 ----
   const goToPreviousWeek = () => {
     setCurrentDate(prev => {
       const d = new Date(prev);
@@ -303,8 +301,10 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
         const dateString = getLocalDateKey(currentDay);
         const isCurrentMonth = currentDay.getMonth() === month;
         const isToday = dateString === today;
-        const myShift = Array.isArray(myShifts) ? myShifts.find(shift => shift.date === dateString) : null;
-        const monthShift = monthData.find(shift => shift.date === dateString);
+
+        // ✅ 하루 여러 구간 모두 가져오기
+        const myShiftsDay = Array.isArray(myShifts) ? myShifts.filter(shift => shift.date === dateString) : [];
+        const hasMonthShift = monthData.some(shift => shift.date === dateString);
         const isWeekend = day === 0 || day === 6;
 
         weekDays.push(
@@ -313,10 +313,10 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
             className={`
               relative p-2 min-h-[80px] border border-border cursor-pointer transition-colors rounded-md
               ${isCurrentMonth ? 'bg-card' : 'bg-muted/50'}
-              ${myShift && !isToday ? 'calendar-workday' : ''}
-              ${isWeekend && !myShift && !monthShift ? 'calendar-weekend' : ''}
+              ${myShiftsDay.length > 0 && !isToday ? 'calendar-workday' : ''}
+              ${isWeekend && myShiftsDay.length === 0 && !hasMonthShift ? 'calendar-weekend' : ''}
               ${userRole === 'admin' && isCurrentMonth ? 'hover:bg-muted' : ''}
-              ${isToday ? 'bg-green-200 dark:bg-green-900/50' : ''} /* 오늘: 녹색 배경 */
+              ${isToday ? 'bg-green-200 dark:bg-green-900/50' : ''}
             `}
             onClick={() => {
               if (userRole === 'admin' && isCurrentMonth) {
@@ -327,15 +327,19 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
           >
             <div className="text-sm font-medium">{currentDay.getDate()}</div>
 
-            {myShift && (
-              <div className="mt-1">
-                <Badge variant="default" className="text-xs">내 근무</Badge>
-                <div className="text-xs text-muted-foreground mt-1">
-                  {myShift.start} - {myShift.end}
-                </div>
+            {/* ✅ 분할 근무 전부 표시 */}
+            {myShiftsDay.length > 0 && (
+              <div className="mt-1 space-y-1">
+                {myShiftsDay.map((s, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    <Badge variant="default" className="text-[10px]">내 근무</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {s.start} - {s.end}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
-            {/* 관리자 월간 배정 배지는 제거 */}
           </div>
         );
       }
@@ -382,7 +386,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
       dayName: string;
       isToday: boolean;
       assignedShifts: Shift[]; // 관리자용: 해당 날짜의 배정들(여러 개 가능)
-      myShift?: Shift | null;  // 근무자용: 내 근무(있을 수도/없을 수도)
+      myShiftsDay: Shift[];    // ✅ 근무자용: 내 근무(분할 포함)
     };
 
     const weekDays: WeekDay[] = [];
@@ -392,7 +396,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
       const dateString = getLocalDateKey(day);
       const isToday = dateString === today;
 
-      // 이 날짜가 속한 월의 캐시에서 배정 가져오기 (렌더 중 API 호출 금지)
+      // 이 날짜가 속한 월의 캐시에서 배정 가져오기
       const monthKey = getLocalMonthKey(day);
       const monthData = getMonthShifts(monthKey);
       const adminShiftsRaw = monthData.filter(s => s.date === dateString);
@@ -404,7 +408,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
         return s;
       });
 
-      const myShift = Array.isArray(myShifts) ? myShifts.find(s => s.date === dateString) : null;
+      const myShiftsDay = Array.isArray(myShifts) ? myShifts.filter(s => s.date === dateString) : [];
 
       weekDays.push({
         date: day,
@@ -412,7 +416,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
         dayName: days[i],
         isToday,
         assignedShifts: adminShifts,
-        myShift,
+        myShiftsDay,
       });
     }
 
@@ -479,10 +483,10 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
                 {time}
               </div>
 
-              {weekDays.map(({ dateString, assignedShifts, myShift }) => {
-                // 근무자 모드
+              {weekDays.map(({ dateString, assignedShifts, myShiftsDay }) => {
+                // 근무자 모드: 내 어떤 구간에도 포함되면 활성화
                 if (userRole === 'worker') {
-                  const active = isWithinShift(time, myShift || undefined);
+                  const active = myShiftsDay.some(s => isWithinShift(time, s));
                   return (
                     <div
                       key={`${time}-${dateString}`}
@@ -492,11 +496,14 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
                         ${active ? 'bg-blue-600 text-white' : ''}
                       `}
                     >
-                      {myShift && time === (myShift.start || '00:00') && (
-                        <div className="text-xs text-center">
-                          <Badge variant="default" className="text-xs">내 근무</Badge>
-                        </div>
-                      )}
+                      {/* 각 구간 시작에 배지 표시 (여러개 가능) */}
+                      {myShiftsDay
+                        .filter(s => time === (s.start || '00:00'))
+                        .map((s, i) => (
+                          <div key={i} className="text-xs text-center">
+                            <Badge variant="default" className="text-xs">내 근무</Badge>
+                          </div>
+                        ))}
                     </div>
                   );
                 }
@@ -640,12 +647,12 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
             <TabsContent value="week">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-4">
-                  {/* ✅ 주간 이동: 1주씩 */}
+                  {/* ✅ 주간 이동: 1주씩, 월 셀렉트 숨김 */}
                   <Button variant="outline" size="sm" onClick={goToPreviousWeek} className="h-8 w-8 p-0">
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
 
-                  {/* ✅ 월 선택 셀렉트 제거, 주차 텍스트만 노출 */}
+                  {/* 몇월 몇째 주 */}
                   <span className="text-sm text-muted-foreground">{weekMeta.text}</span>
 
                   <Button variant="outline" size="sm" onClick={goToNextWeek} className="h-8 w-8 p-0">

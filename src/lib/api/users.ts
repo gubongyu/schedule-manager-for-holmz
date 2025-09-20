@@ -8,6 +8,7 @@ export const listWorkers = async () => {
     .eq('role', 'worker')
     .order('username', { ascending: true });
   if (error) throw error;
+
   return data ?? [];
 };
 

@@ -1,5 +1,6 @@
 // src/lib/api/shifts.ts
 import { supabase } from '@/lib/supabaseClient';
+import { log } from 'console';
 
 export type Shift = {
   id: number | string;
@@ -31,24 +32,65 @@ const monthRange = (monthKey: string): { startKey: string; endKey: string } => {
 };
 
 // 월별 조회 (범위 조건)
+// export const getShiftsByMonth = async (monthKey: string): Promise<Shift[]> => {
+//   const { startKey, endKey } = monthRange(monthKey);
+//   const { data, error } = await supabase
+//     .from('shifts')
+//     .select('id, date, start, end, worker_id, is_weekend')
+//     .gte('date', startKey)
+//     .lt('date', endKey)
+//     .order('date', { ascending: true });
+  
+//   console.log(data);
+//   if (error) throw error;
+//   return (data ?? []).map((r: any) => ({
+//     id: r.id,
+//     date: r.date,
+//     start: fmtHHMM(r.start),
+//     end: fmtHHMM(r.end),
+//     workerId: r.worker_id,
+//     isWeekend: r.is_weekend,
+//   }));
+// };
+
+// lib/api/shifts.ts (현재 함수 바디만 교체)
 export const getShiftsByMonth = async (monthKey: string): Promise<Shift[]> => {
   const { startKey, endKey } = monthRange(monthKey);
+
+  // ✅ profiles 조인으로 이름 가져오기
   const { data, error } = await supabase
     .from('shifts')
-    .select('id, date, start, end, worker_id, is_weekend')
+    .select(`
+      id,
+      date,
+      start,
+      end,
+      worker_id,
+      is_weekend,
+      profiles:worker_id (
+        name,
+        username
+      )
+    `)
     .gte('date', startKey)
     .lt('date', endKey)
-    .order('date', { ascending: true });
+    .order('date', { ascending: true })
+    .order('start', { ascending: true });
+
   if (error) throw error;
+
+  console.log(data);
   return (data ?? []).map((r: any) => ({
     id: r.id,
     date: r.date,
-    start: fmtHHMM(r.start),
+    start: fmtHHMM(r.start),      // 'HH:MM'로 보정
     end: fmtHHMM(r.end),
-    workerId: r.worker_id,
+    workerId: r.worker_id ?? undefined,
+    workerName: r.profiles?.name ?? r.profiles?.username ?? undefined, // ✅ 이름 매핑
     isWeekend: r.is_weekend,
   }));
 };
+
 
 // 특정 사용자 전체(또는 필요시 주/월 단위로 별도 범위 추가)
 export const getShiftsByWorker = async (userId: string): Promise<Shift[]> => {
