@@ -4,12 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import * as attendanceApi from '@/lib/api/attendance';
-import * as shiftApi from '@/lib/api/shifts';
-import { listWorkers, countWorkers } from '@/lib/api/users';
-import { countSubstitutionsByStatus } from '@/lib/api/substitutions';
-
-type Attendance = attendanceApi.Attendance;
+import { api, type Attendance } from '@/lib/api';
 
 const getLocalDateKey = (d: Date) => {
   const y = d.getFullYear();
@@ -39,24 +34,20 @@ const AdminDashboard: React.FC = () => {
       setErr(null);
       try {
         // 근무자 수
-        const nWorkers = await countWorkers().catch(async () => {
-          // count API 없을 때 list로 대체
-          const list = await listWorkers();
-          return list.length;
-        });
+        const nWorkers = (await api.users.listWorkers()).length;
         setTotalWorkers(nWorkers);
 
         // 오늘 출퇴근
-        const att = await attendanceApi.getAttendanceByDate(todayKey);
+        const att = await api.attendance.getAttendanceByDate(todayKey);
         setTodayAttendance(att ?? []);
 
         // 대체요청 대기 건수
-        const pending = await countSubstitutionsByStatus('pending');
+        const pending = await api.substitutions.countSubstitutionsByStatus('pending');
         setPendingSubs(pending);
 
         // 오늘 시프트 배정/미배정 (optional)
         const monthKey = todayKey.slice(0, 7);
-        const shifts = await shiftApi.getShiftsByMonth(monthKey);
+        const shifts = await api.shifts.getShiftsByMonth(monthKey);
         const todays = shifts.filter(s => s.date === todayKey);
         setTodayAssignedCount(todays.filter(s => !!s.workerId).length);
         setTodayUnassignedCount(todays.filter(s => !s.workerId).length);

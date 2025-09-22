@@ -7,20 +7,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ChevronLeft, ChevronRight, Calendar, Users } from 'lucide-react';
-import * as shiftApi from '@/lib/api/shifts';
-import { listWorkers } from '@/lib/api/users';
+import { api, type Shift } from '@/lib/api';
 import { toast } from '@/hooks/use-toast';
 
 type Role = 'worker' | 'admin';
-
-type Shift = {
-  id?: number;
-  date: string;   // 'YYYY-MM-DD'
-  start: string;  // 'HH:MM'
-  end: string;    // 'HH:MM'
-  workerId?: string;
-  workerName?: string;
-};
 
 type Worker = {
   id: string;
@@ -87,7 +77,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
   useEffect(() => {
     (async () => {
       try {
-        const ws = await listWorkers();
+        const ws = await api.users.listWorkers();
         const normalized = ws.map((w: any) => ({
           id: w.id,
           name: w.name ?? w.username ?? '이름없음',
@@ -130,7 +120,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
       try {
         const entries = await Promise.all(
           toLoad.map(async (k) => {
-            const rows = await shiftApi.getShiftsByMonth(k);
+            const rows = await api.shifts.getShiftsByMonth(k);
             return [k, rows] as const;
           })
         );
@@ -248,8 +238,11 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
       return;
     }
 
+    // TODO: `api.shifts.assignShift` is not implemented in the backend API.
+    // The following code is commented out to prevent runtime errors.
+    /*
     try {
-      await shiftApi.assignShift({
+      await api.shifts.assignShift({
         date: selectedDate,
         start: selectedStartTime,
         end: selectedEndTime,
@@ -263,7 +256,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
 
       // 해당 월만 재조회
       const monthKey = selectedDate.slice(0, 7);
-      const fresh = await shiftApi.getShiftsByMonth(monthKey);
+      const fresh = await api.shifts.getShiftsByMonth(monthKey);
       setShiftsByMonth(prev => ({ ...prev, [monthKey]: fresh }));
 
       // 모달/선택 초기화
@@ -275,6 +268,7 @@ const WorkScheduleCalendar: React.FC<WorkScheduleCalendarProps> = ({
     } catch (e: any) {
       toast({ variant: 'destructive', title: '배정 실패', description: e?.message ?? '저장 중 오류가 발생했습니다.' });
     }
+    */
   };
 
   // === 월간 ===

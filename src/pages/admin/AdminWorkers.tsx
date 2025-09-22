@@ -1,109 +1,34 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { toast } from '@/hooks/use-toast';
-import { listWorkers, createWorker, deleteWorker } from '@/lib/api/users';
-
-type Worker = {
-  id: string;
-  name: string;
-  department?: string;
-  role: 'worker' | 'admin';
-};
+import { useWorkers, type Worker } from '@/hooks/useWorkers';
 
 const AdminWorkers: React.FC = () => {
+  const {
+    workers,
+    loading,
+    err,
+    deletingId,
+    isAdding,
+    addWorker,
+    deleteWorker,
+  } = useWorkers();
+
   const [newWorkerName, setNewWorkerName] = useState('');
   const [newWorkerDept, setNewWorkerDept] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
-
-  const [rows, setRows] = useState<Worker[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    setErr(null);
-    try {
-      const ws = await listWorkers();
-      const normalized: Worker[] = (ws ?? []).map((w: any) => ({
-        id: w.id,
-        name: w.name ?? w.username ?? '이름없음',
-        department: w.department ?? '',
-        role: (w.role ?? 'worker') as 'worker' | 'admin',
-      }));
-      setRows(normalized);
-    } catch (e: any) {
-      setErr(e?.message ?? '근무자 목록을 불러오지 못했습니다.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const workers = useMemo(() => rows.filter(u => u.role === 'worker'), [rows]);
 
   const handleAddWorker = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newWorkerName.trim() || !newWorkerDept.trim()) {
-      toast({ variant: 'destructive', title: '입력 필요', description: '이름과 소속을 입력하세요.' });
-      return;
-    }
-
-    setIsAdding(true);
     try {
-      // 서버에 저장
-      const created = await createWorker({
-        name: newWorkerName.trim(),
-        department: newWorkerDept.trim(),
-      });
-
-      // 로컬 목록에 즉시 반영
-      const normalized: Worker = {
-        id: created.id,
-        name: created.name ?? created.username ?? newWorkerName.trim(),
-        department: created.department ?? newWorkerDept.trim(),
-        role: (created.role ?? 'worker') as 'worker' | 'admin',
-      };
-      setRows(prev => [normalized, ...prev]);
-
-      toast({ title: '근무자 추가 완료', description: '근무자가 추가되었습니다.' });
+      await addWorker({ name: newWorkerName, department: newWorkerDept });
       setNewWorkerName('');
       setNewWorkerDept('');
-    } catch (e: any) {
-      toast({
-        variant: 'destructive',
-        title: '추가 실패',
-        description: e?.message ?? '근무자 추가 중 오류가 발생했습니다.',
-      });
-    } finally {
-      setIsAdding(false);
-    }
-  };
-
-  const handleDeleteWorker = async (workerId: string, workerName: string) => {
-    setDeletingId(workerId);
-    try {
-      // 낙관적 제거
-      setRows(prev => prev.filter(u => u.id !== workerId));
-      await deleteWorker(workerId);
-      toast({ title: '근무자 삭제 완료', description: `${workerName}님이 삭제되었습니다.` });
-    } catch (e: any) {
-      // 롤백
-      await load();
-      toast({
-        variant: 'destructive',
-        title: '삭제 실패',
-        description: e?.message ?? '근무자 삭제 중 오류가 발생했습니다.',
-      });
-    } finally {
-      setDeletingId(null);
+    } catch (e) {
+      // Error is already handled by the toast in the hook
+      console.error(e);
     }
   };
 
@@ -193,7 +118,7 @@ const AdminWorkers: React.FC = () => {
                     <Button
                       variant="danger"
                       size="sm"
-                      onClick={() => handleDeleteWorker(worker.id, worker.name)}
+                      onClick={() => deleteWorker(worker.id, worker.name)}
                       disabled={deletingId === worker.id}
                     >
                       {deletingId === worker.id ? '삭제 중...' : '삭제'}

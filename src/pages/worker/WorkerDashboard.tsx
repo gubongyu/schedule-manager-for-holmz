@@ -1,101 +1,14 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { toast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import * as attendanceApi from '@/lib/api/attendance';
-
-type BusyKey = 'start' | 'end' | null;
-
-const getLocalDateKey = (d: Date) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
+import { useWorkerDashboard } from '@/hooks/useWorkerDashboard';
 
 const WorkerDashboard: React.FC = () => {
-  const { user } = useAuth();
+  const { user, attendance, loading, err, busy, startWork, endWork } = useWorkerDashboard();
   const navigate = useNavigate();
-  const [busy, setBusy] = useState<BusyKey>(null);
-  const [att, setAtt] = useState<attendanceApi.Attendance | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  const today = useMemo(() => getLocalDateKey(new Date()), []);
-
-  // 오늘 내 출퇴근 상태 로드
-  useEffect(() => {
-    (async () => {
-      if (!user?.id) return;
-      setLoading(true);
-      setErr(null);
-      try {
-        const row = await attendanceApi.getAttendanceByUserDate(user.id, today);
-        setAtt(row ?? null);
-      } catch (e: any) {
-        setErr(e?.message ?? '출퇴근 정보를 불러오지 못했습니다.');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [user?.id, today]);
-
-  const handleStartWork = async () => {
-    if (!user?.id) return;
-    if (att?.status === 'working' || att?.status === 'ended') {
-      toast({
-        variant: 'destructive',
-        title: '이미 처리된 상태입니다',
-        description: att.status === 'working' ? '이미 근무를 시작했습니다.' : '이미 근무를 종료했습니다.',
-      });
-      return;
-    }
-
-    setBusy('start');
-    try {
-      const updated = await attendanceApi.startWork(user.id);
-      setAtt(updated);
-      toast({ title: '근무 시작', description: '근무를 시작했습니다.' });
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: '시작 실패', description: e?.message ?? '오류가 발생했습니다.' });
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleEndWork = async () => {
-    if (!user?.id) return;
-    if (att?.status === 'ended') {
-      toast({
-        variant: 'destructive',
-        title: '이미 처리된 상태입니다',
-        description: '이미 근무를 종료했습니다.',
-      });
-      return;
-    }
-    if (att?.status !== 'working') {
-      toast({
-        variant: 'destructive',
-        title: '근무를 시작해주세요',
-        description: '근무 시작 후 종료할 수 있습니다.',
-      });
-      return;
-    }
-
-    setBusy('end');
-    try {
-      const updated = await attendanceApi.endWork(user.id);
-      setAtt(updated);
-      toast({ title: '근무 종료', description: '근무를 종료했습니다.' });
-    } catch (e: any) {
-      toast({ variant: 'destructive', title: '종료 실패', description: e?.message ?? '오류가 발생했습니다.' });
-    } finally {
-      setBusy(null);
-    }
-  };
 
   const quickActions = [
     {
@@ -117,17 +30,17 @@ const WorkerDashboard: React.FC = () => {
     {
       title: '근무 시작',
       description: '오늘 근무를 시작하세요',
-      action: handleStartWork,
+      action: startWork,
       variant: 'success' as const,
-      disabled: att?.status === 'working' || att?.status === 'ended',
+      disabled: attendance?.status === 'working' || attendance?.status === 'ended',
       loading: busy === 'start',
     },
     {
       title: '근무 종료',
       description: '오늘 근무를 종료하세요',
-      action: handleEndWork,
+      action: endWork,
       variant: 'danger' as const,
-      disabled: att?.status !== 'working',
+      disabled: attendance?.status !== 'working',
       loading: busy === 'end',
     },
   ];
@@ -160,18 +73,18 @@ const WorkerDashboard: React.FC = () => {
                 <div className="flex flex-wrap items-center gap-2 mt-1">
                   <Badge
                     variant={
-                      att?.status === 'working' ? 'working' :
-                      att?.status === 'ended' ? 'ended' : 'not-started'
+                      attendance?.status === 'working' ? 'working' :
+                      attendance?.status === 'ended' ? 'ended' : 'not-started'
                     }
                   >
-                    {att?.status === 'working' ? '근무 중' :
-                     att?.status === 'ended' ? '근무 완료' : '미출근'}
+                    {attendance?.status === 'working' ? '근무 중' :
+                     attendance?.status === 'ended' ? '근무 완료' : '미출근'}
                   </Badge>
-                  {att?.startAt && (
-                    <span className="text-sm text-muted-foreground">출근: {att.startAt}</span>
+                  {attendance?.startAt && (
+                    <span className="text-sm text-muted-foreground">출근: {attendance.startAt}</span>
                   )}
-                  {att?.endAt && (
-                    <span className="text-sm text-muted-foreground">퇴근: {att.endAt}</span>
+                  {attendance?.endAt && (
+                    <span className="text-sm text-muted-foreground">퇴근: {attendance.endAt}</span>
                   )}
                 </div>
               </div>

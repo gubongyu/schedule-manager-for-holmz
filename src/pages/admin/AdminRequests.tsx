@@ -1,84 +1,38 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import React from 'react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { toast } from '@/hooks/use-toast';
-import * as subsApi from '@/lib/api/substitutions';
+import { useSubstitutionRequests } from '@/hooks/useSubstitutionRequests';
 
 type Status = 'pending' | 'approved' | 'rejected';
 
+const getStatusText = (status: string) => {
+  switch (status) {
+    case 'pending': return '승인 대기';
+    case 'approved': return '승인 완료';
+    case 'rejected': return '반려';
+    default: return status;
+  }
+};
+
+const getStatusVariant = (status: string) => {
+  switch (status) {
+    case 'pending': return 'pending' as const;
+    case 'approved': return 'approved' as const;
+    case 'rejected': return 'rejected' as const;
+    default: return 'default' as const;
+  }
+};
+
 const AdminRequests: React.FC = () => {
-  const [rows, setRows] = useState<subsApi.SubstitutionRequest[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [isLoadingId, setIsLoadingId] = useState<string | number | null>(null);
-
-  const load = async () => {
-    setLoading(true);
-    setErr(null);
-    try {
-      const data = await subsApi.listSubstitutions();
-      setRows(data ?? []);
-    } catch (e: any) {
-      setErr(e?.message ?? '요청을 불러오지 못했습니다.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    load();
-  }, []);
-
-  const handleApproval = async (requestId: string | number, action: Status) => {
-    setIsLoadingId(requestId);
-    try {
-      await subsApi.updateSubstitutionStatus(String(requestId), action);
-      // 로컬 상태 업데이트 (새로고침 없이 반영)
-      setRows(prev =>
-        prev.map(r => (r.id === requestId ? { ...r, status: action } : r))
-      );
-      toast({
-        title: action === 'approved' ? '승인 완료' : '반려 완료',
-        description: action === 'approved' ? '승인되었습니다.' : '반려되었습니다.',
-      });
-    } catch (e: any) {
-      toast({
-        variant: 'destructive',
-        title: '처리 실패',
-        description: e?.message ?? '요청 처리 중 오류가 발생했습니다.',
-      });
-    } finally {
-      setIsLoadingId(null);
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case 'pending': return '승인 대기';
-      case 'approved': return '승인 완료';
-      case 'rejected': return '반려';
-      default: return status;
-    }
-  };
-
-  const getStatusVariant = (status: string) => {
-    switch (status) {
-      case 'pending': return 'pending' as const;
-      case 'approved': return 'approved' as const;
-      case 'rejected': return 'rejected' as const;
-      default: return 'default' as const;
-    }
-  };
-
-  const pendingRequests = useMemo(
-    () => rows.filter(req => req.status === 'pending'),
-    [rows]
-  );
-  const processedRequests = useMemo(
-    () => rows.filter(req => req.status !== 'pending'),
-    [rows]
-  );
+  const {
+    loading,
+    err,
+    isLoadingId,
+    updateRequestStatus,
+    pendingRequests,
+    processedRequests,
+  } = useSubstitutionRequests();
 
   return (
     <div className="space-y-8">
@@ -130,7 +84,7 @@ const AdminRequests: React.FC = () => {
                       <Button
                         variant="success"
                         size="sm"
-                        onClick={() => handleApproval(request.id, 'approved')}
+                        onClick={() => updateRequestStatus(request.id, 'approved')}
                         disabled={isLoadingId === request.id}
                       >
                         {isLoadingId === request.id ? '처리 중...' : '승인'}
@@ -138,7 +92,7 @@ const AdminRequests: React.FC = () => {
                       <Button
                         variant="danger"
                         size="sm"
-                        onClick={() => handleApproval(request.id, 'rejected')}
+                        onClick={() => updateRequestStatus(request.id, 'rejected')}
                         disabled={isLoadingId === request.id}
                       >
                         {isLoadingId === request.id ? '처리 중...' : '반려'}

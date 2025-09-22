@@ -1,99 +1,54 @@
-// src/pages/admin/AdminAttendance.tsx
-
-import React, { useEffect, useMemo, useState } from 'react';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import * as attendanceApi from '@/lib/api/attendance';
-import { listWorkers } from '@/lib/api/users';
+import { useAdminAttendance } from '@/hooks/useAdminAttendance';
 
 type Status = 'working' | 'ended' | 'not_started';
 
-type Worker = {
-  id: string;
-  name: string;
-  department?: string;
+const getStatusText = (status: Status | string) => {
+  switch (status) {
+    case 'working': return '근무 중';
+    case 'ended': return '종료';
+    case 'not_started': return '미시작';
+    default: return String(status);
+  }
 };
 
-const getLocalDateKey = (d: Date) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+const getStatusVariant = (status: Status | string) => {
+  switch (status) {
+    case 'working': return 'working' as const;
+    case 'ended': return 'ended' as const;
+    case 'not_started': return 'not-started' as const;
+    default: return 'default' as const;
+  }
+};
+
+const calculateWorkHours = (startTime: string, endTime: string): string => {
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+
+  const s = sh * 60 + sm;
+  let e = eh * 60 + em;
+  if (e < s) e += 24 * 60; // 자정을 넘어갔을 때 보정
+
+  const diff = e - s;
+  const h = Math.floor(diff / 60);
+  const m = diff % 60;
+  return `${h}시간 ${m}분`;
 };
 
 const AdminAttendance: React.FC = () => {
-  const [selectedDate, setSelectedDate] = useState(getLocalDateKey(new Date()));
-  const [rows, setRows] = useState<attendanceApi.Attendance[]>([]);
-  const [workers, setWorkers] = useState<Worker[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  // 근무자 목록 로드 (id -> name 매핑용)
-  useEffect(() => {
-    (async () => {
-      try {
-        const ws = await listWorkers();
-        const normalized = ws.map((w: any) => ({
-          id: w.id,
-          name: w.name ?? w.username ?? '이름없음',
-          department: w.department,
-        })) as Worker[];
-        setWorkers(normalized);
-      } catch (e: any) {
-        // 이름 매핑 실패해도 기능은 동작하므로 콘솔만 남김
-        console.error(e);
-      }
-    })();
-  }, []);
-
-  // 날짜 바뀔 때마다 출퇴근 데이터 로드
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setErr(null);
-      try {
-        const data = await attendanceApi.getAttendanceByDate(selectedDate);
-        setRows(data ?? []);
-      } catch (e: any) {
-        setErr(e?.message ?? '출퇴근 데이터를 불러오지 못했습니다.');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [selectedDate]);
-
-  const workerMap = useMemo(() => {
-    const m = new Map<string, Worker>();
-    workers.forEach(w => m.set(w.id, w));
-    return m;
-  }, [workers]);
-
-  const getStatusText = (status: Status | string) => {
-    switch (status) {
-      case 'working': return '근무 중';
-      case 'ended': return '종료';
-      case 'not_started': return '미시작';
-      default: return String(status);
-    }
-  };
-
-  const getStatusVariant = (status: Status | string) => {
-    switch (status) {
-      case 'working': return 'working' as const;
-      case 'ended': return 'ended' as const;
-      case 'not_started': return 'not-started' as const;
-      default: return 'default' as const;
-    }
-  };
-
-  const stats = useMemo(() => ({
-    total: rows.length,
-    working: rows.filter(att => att.status === 'working').length,
-    ended: rows.filter(att => att.status === 'ended').length,
-    notStarted: rows.filter(att => att.status === 'not_started').length,
-  }), [rows]);
+  const {
+    selectedDate,
+    setSelectedDate,
+    attendance,
+    workerMap,
+    loading,
+    err,
+    stats,
+  } = useAdminAttendance();
 
   return (
     <div className="space-y-8">
@@ -173,13 +128,13 @@ const AdminAttendance: React.FC = () => {
               <p className="text-destructive">{err}</p>
             </CardContent>
           </Card>
-        ) : rows.length > 0 ? (
+        ) : attendance.length > 0 ? (
           <div className="space-y-4">
-            {rows.map((attendance) => {
-              const w = workerMap.get(attendance.userId);
-              const displayName = attendance.userName ?? w?.name ?? attendance.userId;
+            {attendance.map((att) => {
+              const w = workerMap.get(att.userId);
+              const displayName = att.userName ?? w?.name ?? att.userId;
               return (
-                <Card key={attendance.id ?? `${attendance.userId}-${attendance.date}`}>
+                <Card key={att.id ?? `${att.userId}-${att.date}`}>
                   <CardContent className="p-6">
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-center">
                       <div>
@@ -189,29 +144,29 @@ const AdminAttendance: React.FC = () => {
 
                       <div>
                         <p className="font-medium">
-                          {attendance.startAt ? `출근: ${attendance.startAt}` : '미출근'}
+                          {att.startAt ? `출근: ${att.startAt}` : '미출근'}
                         </p>
                         <p className="text-sm text-muted-foreground">출근 시간</p>
                       </div>
 
                       <div>
                         <p className="font-medium">
-                          {attendance.endAt ? `퇴근: ${attendance.endAt}` : '미퇴근'}
+                          {att.endAt ? `퇴근: ${att.endAt}` : '미퇴근'}
                         </p>
                         <p className="text-sm text-muted-foreground">퇴근 시간</p>
                       </div>
 
                       <div className="flex justify-end">
-                        <Badge variant={getStatusVariant(attendance.status)}>
-                          {getStatusText(attendance.status)}
+                        <Badge variant={getStatusVariant(att.status)}>
+                          {getStatusText(att.status)}
                         </Badge>
                       </div>
                     </div>
 
-                    {attendance.startAt && attendance.endAt && (
+                    {att.startAt && att.endAt && (
                       <div className="mt-4 pt-4 border-t border-border">
                         <p className="text-sm text-muted-foreground">
-                          총 근무 시간: {calculateWorkHours(attendance.startAt, attendance.endAt)}
+                          총 근무 시간: {calculateWorkHours(att.startAt, att.endAt)}
                         </p>
                       </div>
                     )}
@@ -230,21 +185,6 @@ const AdminAttendance: React.FC = () => {
       </div>
     </div>
   );
-};
-
-// Helper: 근무 시간 계산 (자정 넘김 보정)
-const calculateWorkHours = (startTime: string, endTime: string): string => {
-  const [sh, sm] = startTime.split(':').map(Number);
-  const [eh, em] = endTime.split(':').map(Number);
-
-  const s = sh * 60 + sm;
-  let e = eh * 60 + em;
-  if (e < s) e += 24 * 60; // 자정을 넘어갔을 때 보정
-
-  const diff = e - s;
-  const h = Math.floor(diff / 60);
-  const m = diff % 60;
-  return `${h}시간 ${m}분`;
 };
 
 export default AdminAttendance;
