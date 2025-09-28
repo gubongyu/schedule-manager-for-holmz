@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { toast } from '@/hooks/use-toast';
-import { api, type SubstitutionRequest } from '@/lib/api';
+import { api, type Substitution, type SubstitutionApplicant, type Profile } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 const getLocalDateKey = (d: Date) => {
@@ -27,7 +27,9 @@ const parseTimeRange = (text: string): { start: string; end: string } | null => 
 
 export const useWorkerSubstitution = () => {
   const { user } = useAuth();
-  const [requests, setRequests] = useState<SubstitutionRequest[]>([]);
+  const [requests, setRequests] = useState<Substitution[]>([]);
+  const [applicants, setApplicants] = useState<SubstitutionApplicant[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -41,8 +43,15 @@ export const useWorkerSubstitution = () => {
     setLoading(true);
     setErr(null);
     try {
-      const data = await api.substitutions.listSubstitutions();
+      // FIXME: This is not efficient. The API should be improved.
+      const [data, ps] = await Promise.all([
+        api.substitutions.listSubstitutions(),
+        api.users.listWorkers(),
+      ]);
       setRequests(data ?? []);
+      setProfiles(ps as Profile[]);
+      // const apps = await api.substitutions.listSubstitutionApplicants();
+      // setApplicants(apps ?? []);
     } catch (e: any) {
       setErr(e?.message ?? '대체 근무 요청을 불러오지 못했습니다.');
     } finally {
@@ -54,33 +63,35 @@ export const useWorkerSubstitution = () => {
     fetchRequests();
   }, [fetchRequests]);
 
+  const profileMap = useMemo(() => {
+    const map = new Map<string, Profile>();
+    profiles.forEach(p => map.set(p.auth_id, p));
+    return map;
+  }, [profiles]);
+
   const userRequests = useMemo(
-    () => (user?.id ? requests.filter(r => r.ownerId === user.id) : []),
-    [requests, user?.id]
+    () => (user?.auth_id ? requests.filter(r => r.owner_uid === user.auth_id) : []),
+    [requests, user?.auth_id]
   );
 
   const availableRequests = useMemo(() => {
-    if (!user?.id) return [];
+    if (!user?.auth_id) return [];
     return requests.filter(r =>
-      r.ownerId !== user.id &&
+      r.owner_uid !== user.auth_id &&
       r.status === 'pending' &&
-      !(r.applicants ?? []).some(a => a.id === user.id)
+      !applicants.some(a => a.substitution_id === r.id && a.user_uid === user.auth_id)
     );
-  }, [requests, user?.id]);
+  }, [requests, applicants, user?.auth_id]);
 
   const createRequest = async (payload: { date: string; start: string; end: string; }) => {
-    if (!user?.id) throw new Error("User not found");
+    if (!user?.auth_id) throw new Error("User not found");
     setCreating(true);
     try {
       const created = await api.substitutions.createSubstitution({
         ...payload,
-        ownerId: user.id,
+        owner_uid: user.auth_id,
       });
-      const withOwner = {
-        ...created,
-        ownerName: created.ownerName ?? user.name ?? user.id,
-      } as SubstitutionRequest;
-      setRequests(prev => [withOwner, ...prev]);
+      setRequests(prev => [created, ...prev]);
       toast({ title: '요청 완료', description: '대체 근무 요청이 등록되었습니다.' });
     } catch (e: any) {
       toast({
@@ -117,17 +128,11 @@ export const useWorkerSubstitution = () => {
   };
 
   const applyToRequest = async (requestId: string | number) => {
-    if (!user?.id) return;
+    if (!user?.auth_id) return;
     setApplyingId(requestId);
     try {
-      const applicant = await api.substitutions.applyToSubstitution(String(requestId), user.id);
-      setRequests(prev =>
-        prev.map(r =>
-          r.id === requestId
-            ? { ...r, applicants: [...(r.applicants ?? []), applicant] }
-            : r
-        )
-      );
+      await api.substitutions.applyToSubstitution(requestId as number, user.auth_id);
+      setApplicants(prev => [...prev, { substitution_id: requestId as number, user_uid: user.auth_id, applied_at: new Date().toISOString() }]);
       toast({ title: '신청 완료', description: '신청이 완료되었습니다.' });
     } catch (error: any) {
       toast({
@@ -156,5 +161,7 @@ export const useWorkerSubstitution = () => {
     setTimeRange,
     todayKey,
     handleCreateRequest,
+    profileMap,
+    applicants,
   };
 };

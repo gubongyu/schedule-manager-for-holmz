@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ChevronLeft, ChevronRight, Calendar } from 'lucide-react';
-import { Shift, Worker } from '@/domain';
+import { Shift, Profile } from '@/domain';
 import { getLocalDateKey, getLocalMonthKey } from '@/features/schedule-calendar/shared/useScheduleCalendar';
 
 // Helper functions for rendering
@@ -59,7 +59,7 @@ interface CalendarViewProps {
   today: string;
   shiftsByMonth: Record<string, Shift[]>;
   myShifts?: Shift[];
-  workers: Worker[];
+  profiles: Profile[];
   // Navigation
   goToPrevious: () => void;
   goToNext: () => void;
@@ -79,7 +79,7 @@ interface CalendarViewProps {
 
 export const CalendarView: React.FC<CalendarViewProps> = (props) => {
   const { 
-    userRole, currentDate, viewType, today, shiftsByMonth, myShifts = [], workers,
+    userRole, currentDate, viewType, today, shiftsByMonth, myShifts = [], profiles,
     goToPrevious, goToNext, handleMonthSelect, setViewType,
     onMouseDownCell = () => {}, onMouseEnterCell = () => {}, onMouseUpGrid = () => {},
     isDragging, dragDateString, dragStartTime, dragEndTime,
@@ -173,7 +173,7 @@ export const CalendarView: React.FC<CalendarViewProps> = (props) => {
         dateString,
         dayName: ['일', '월', '화', '수', '목', '금', '토'][i],
         isToday: dateString === today,
-        assignedShifts: monthData.filter(s => s.date === dateString).map(s => ({ ...s, workerName: s.workerName ?? workers.find(w=>w.id === s.workerId)?.name ?? '미상' })),
+        assignedShifts: monthData.filter(s => s.date === dateString).map(s => ({ ...s, username: profiles.find(p=>p.auth_id === s.worker_uid)?.username ?? '미상' })),
         myShiftsDay: myShifts.filter(s => s.date === dateString),
       };
     });
@@ -210,10 +210,10 @@ export const CalendarView: React.FC<CalendarViewProps> = (props) => {
                 let innerBadge: React.ReactNode = null;
                 if (matching.length > 0) {
                   const s0 = matching[0];
-                  const color = colorForWorker(s0.workerId || s0.workerName);
+                  const color = colorForWorker(s0.worker_uid);
                   cellClass += ` ${color.bg} ${color.text}`;
                   if (time === s0.start) {
-                    innerBadge = <Badge className="text-xs">{s0.workerName}</Badge>;
+                    innerBadge = <Badge className="text-xs">{s0.username}</Badge>;
                   }
                 }
                 if (isWithinDrag(dateString, time)) cellClass += ' outline outline-2 outline-blue-400';

@@ -5,21 +5,21 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useUserManagement } from '@/features/user-management/admin/useUserManagement';
-import type { Worker } from '@/domain';
+import type { Profile } from '@/domain';
 
 const AdminWorkers: React.FC = () => {
   const {
-    workers,
+    profiles,
     loading,
     err,
     deletingId,
     isAdding,
-    deleteWorker,
-    newWorkerName,
-    setNewWorkerName,
-    newWorkerDept,
-    setNewWorkerDept,
-    handleAddWorker,
+    deleteProfile,
+    newUsername,
+    setNewUsername,
+    newDept,
+    setNewDept,
+    handleAddProfile,
   } = useUserManagement();
 
   return (
@@ -35,15 +35,15 @@ const AdminWorkers: React.FC = () => {
           <CardTitle>새 근무자 추가</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleAddWorker} className="space-y-4">
+          <form onSubmit={handleAddProfile} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="name">이름</Label>
                 <Input
                   id="name"
-                  value={newWorkerName}
-                  onChange={(e) => setNewWorkerName(e.target.value)}
-                  placeholder="근무자 이름을 입력하세요"
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                  placeholder="프로필 이름을 입력하세요"
                   required
                 />
               </div>
@@ -52,8 +52,8 @@ const AdminWorkers: React.FC = () => {
                 <Label htmlFor="department">소속</Label>
                 <Input
                   id="department"
-                  value={newWorkerDept}
-                  onChange={(e) => setNewWorkerDept(e.target.value)}
+                  value={newDept}
+                  onChange={(e) => setNewDept(e.target.value)}
                   placeholder="소속 부서를 입력하세요"
                   required
                 />
@@ -72,9 +72,9 @@ const AdminWorkers: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Workers List */}
+      {/* Profiles List */}
       <div>
-        <h2 className="text-xl font-semibold mb-4">현재 근무자 명단</h2>
+        <h2 className="text-xl font-semibold mb-4">현재 프로필 명단</h2>
 
         {loading ? (
           <Card>
@@ -84,21 +84,21 @@ const AdminWorkers: React.FC = () => {
           <Card>
             <CardContent className="py-12 text-center text-destructive">{err}</CardContent>
           </Card>
-        ) : workers.length > 0 ? (
+        ) : profiles.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {workers.map((worker) => (
-              <Card key={worker.id}>
+            {profiles.map((profile) => (
+              <Card key={profile.auth_id}>
                 <CardContent className="p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center space-x-3">
                       <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center">
                         <span className="text-primary-foreground font-semibold">
-                          {worker.name?.charAt(0) ?? '·'}
+                          {profile.username?.charAt(0) ?? '·'}
                         </span>
                       </div>
                       <div>
-                        <h3 className="font-medium">{worker.name}</h3>
-                        <p className="text-sm text-muted-foreground">{worker.department}</p>
+                        <h3 className="font-medium">{profile.username}</h3>
+                        <p className="text-sm text-muted-foreground">{profile.department}</p>
                       </div>
                     </div>
                   </div>
@@ -108,10 +108,10 @@ const AdminWorkers: React.FC = () => {
                     <Button
                       variant="danger"
                       size="sm"
-                      onClick={() => deleteWorker(worker.id, worker.name)}
-                      disabled={deletingId === worker.id}
+                      onClick={() => deleteProfile(profile.auth_id, profile.username)}
+                      disabled={deletingId === profile.auth_id}
                     >
-                      {deletingId === worker.id ? '삭제 중...' : '삭제'}
+                      {deletingId === profile.auth_id ? '삭제 중...' : '삭제'}
                     </Button>
                   </div>
                 </CardContent>
@@ -121,7 +121,7 @@ const AdminWorkers: React.FC = () => {
         ) : (
           <Card>
             <CardContent className="text-center py-12">
-              <p className="text-muted-foreground">등록된 근무자가 없습니다.</p>
+              <p className="text-muted-foreground">등록된 프로필이 없습니다.</p>
             </CardContent>
           </Card>
         )}
@@ -133,11 +133,11 @@ const AdminWorkers: React.FC = () => {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="font-medium">총 근무자 수</h3>
-                <p className="text-sm text-muted-foreground">현재 등록된 근무자</p>
+                <h3 className="font-medium">총 프로필 수</h3>
+                <p className="text-sm text-muted-foreground">현재 등록된 프로필</p>
               </div>
               <div className="text-right">
-                <p className="text-2xl font-bold text-primary">{workers.length}</p>
+                <p className="text-2xl font-bold text-primary">{profiles.length}</p>
                 <p className="text-sm text-muted-foreground">명</p>
               </div>
             </div>

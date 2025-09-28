@@ -44,7 +44,7 @@ const AdminAttendance: React.FC = () => {
     selectedDate,
     setSelectedDate,
     attendance,
-    workerMap,
+    profileMap,
     loading,
     err,
     stats,
@@ -131,27 +131,27 @@ const AdminAttendance: React.FC = () => {
         ) : attendance.length > 0 ? (
           <div className="space-y-4">
             {attendance.map((att) => {
-              const w = workerMap.get(att.userId);
-              const displayName = att.userName ?? w?.name ?? att.userId;
+              const w = profileMap.get(att.user_uid);
+              const displayName = w?.username ?? att.user_uid;
               return (
-                <Card key={att.id ?? `${att.userId}-${att.date}`}>
+                <Card key={att.id ?? `${att.user_uid}-${att.date}`}>
                   <CardContent className="p-6">
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-center">
                       <div>
                         <h3 className="font-medium">{displayName}</h3>
-                        <p className="text-sm text-muted-foreground">근무자</p>
+                        <p className="text-sm text-muted-foreground">프로필</p>
                       </div>
 
                       <div>
                         <p className="font-medium">
-                          {att.startAt ? `출근: ${att.startAt}` : '미출근'}
+                          {att.start_at ? `출근: ${att.start_at}` : '미출근'}
                         </p>
                         <p className="text-sm text-muted-foreground">출근 시간</p>
                       </div>
 
                       <div>
                         <p className="font-medium">
-                          {att.endAt ? `퇴근: ${att.endAt}` : '미퇴근'}
+                          {att.end_at ? `퇴근: ${att.end_at}` : '미퇴근'}
                         </p>
                         <p className="text-sm text-muted-foreground">퇴근 시간</p>
                       </div>
@@ -163,10 +163,10 @@ const AdminAttendance: React.FC = () => {
                       </div>
                     </div>
 
-                    {att.startAt && att.endAt && (
+                    {att.start_at && att.end_at && (
                       <div className="mt-4 pt-4 border-t border-border">
                         <p className="text-sm text-muted-foreground">
-                          총 근무 시간: {calculateWorkHours(att.startAt, att.endAt)}
+                          총 근무 시간: {calculateWorkHours(att.start_at, att.end_at)}
                         </p>
                       </div>
                     )}

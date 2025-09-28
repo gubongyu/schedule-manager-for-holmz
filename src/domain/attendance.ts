@@ -1,9 +1,8 @@
-export interface Attendance {
+export interface AttendanceLog {
   id?: number;
-  userId: string;
-  userName?: string;
-  date: string;    // 'YYYY-MM-DD'
-  startAt?: string; // 'HH:MM'
-  endAt?: string;   // 'HH:MM'
+  user_uid: string;
+  date: string; // 'YYYY-MM-DD'
+  start_at?: string; // 'HH:MM'
+  end_at?: string; // 'HH:MM'
   status: 'working' | 'ended' | 'not_started';
 }

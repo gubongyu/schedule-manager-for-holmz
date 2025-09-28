@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { api } from '@/lib/api';
-import { Shift } from '@/lib/api/shifts';
+import { Shift } from '@/domain';
 
 export const useWorkerSchedule = () => {
   const { user } = useAuth();
@@ -19,7 +19,7 @@ export const useWorkerSchedule = () => {
       setLoading(true);
       try {
         const [myShiftsData, monthShiftsData] = await Promise.all([
-          api.shifts.getShiftsByWorker(user.id),
+          api.shifts.getShiftsByWorker(user.auth_id),
           api.shifts.getShiftsByMonth(currentMonth),
         ]);
         setMyShifts(myShiftsData);

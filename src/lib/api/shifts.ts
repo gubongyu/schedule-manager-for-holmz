@@ -55,10 +55,9 @@ export const getShiftsByMonth = async (monthKey: string): Promise<Shift[]> => {
       date,
       start,
       end,
-      worker_id,
+      worker_uid,
       is_weekend,
-      profiles:worker_id (
-        name,
+      profiles:worker_uid (
         username
       )
     `)
@@ -75,8 +74,7 @@ export const getShiftsByMonth = async (monthKey: string): Promise<Shift[]> => {
     date: r.date,
     start: fmtHHMM(r.start),      // 'HH:MM'로 보정
     end: fmtHHMM(r.end),
-    workerId: r.worker_id ?? undefined,
-    workerName: r.profiles?.name ?? r.profiles?.username ?? undefined, // ✅ 이름 매핑
+    worker_uid: r.worker_uid ?? undefined,
     isWeekend: r.is_weekend,
   }));
 };
@@ -86,8 +84,8 @@ export const getShiftsByMonth = async (monthKey: string): Promise<Shift[]> => {
 export const getShiftsByWorker = async (userId: string): Promise<Shift[]> => {
   const { data, error } = await supabase
     .from('shifts')
-    .select('id, date, start, end, worker_id, is_weekend')
-    .eq('worker_id', userId)
+    .select('id, date, start, end, worker_uid, is_weekend')
+    .eq('worker_uid', userId)
     .order('date', { ascending: true });
   if (error) throw error;
   return (data ?? []).map((r: any) => ({
@@ -95,7 +93,7 @@ export const getShiftsByWorker = async (userId: string): Promise<Shift[]> => {
     date: r.date,
     start: fmtHHMM(r.start),
     end: fmtHHMM(r.end),
-    workerId: r.worker_id,
+    worker_uid: r.worker_uid,
     isWeekend: r.is_weekend,
   }));
 };
@@ -107,7 +105,7 @@ export const getShiftsByRange = async (
 ): Promise<Shift[]> => {
   const { data, error } = await supabase
     .from('shifts')
-    .select('id, date, start, end, worker_id, is_weekend')
+    .select('id, date, start, end, worker_uid, is_weekend')
     .gte('date', startKey)
     .lt('date', endKey)
     .order('date', { ascending: true });
@@ -117,7 +115,7 @@ export const getShiftsByRange = async (
     date: r.date,
     start: fmtHHMM(r.start),
     end: fmtHHMM(r.end),
-    workerId: r.worker_id,
+    worker_uid: r.worker_uid,
     isWeekend: r.is_weekend,
   }));
 };

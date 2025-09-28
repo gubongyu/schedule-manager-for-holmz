@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import { Shift, Worker } from '@/domain';
+import { Shift, Profile } from '@/domain';
 import { toast } from '@/hooks/use-toast';
 
 export const getLocalDateKey = (d: Date) => {
@@ -20,20 +20,20 @@ export const useScheduleCalendar = () => {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewType, setViewType] = useState<'month' | 'week'>('month');
   const [shiftsByMonth, setShiftsByMonth] = useState<Record<string, Shift[]>>({});
-  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loadingMonths, setLoadingMonths] = useState<Set<string>>(new Set());
 
   const currentMonthKey = getLocalMonthKey(currentDate);
   const today = getLocalDateKey(new Date());
 
-  // Load workers once
+  // Load profiles once
   useEffect(() => {
     (async () => {
       try {
         const ws = await api.users.listWorkers();
-        setWorkers(ws.map((w: any) => ({
-          id: w.id,
-          name: w.name ?? w.username ?? '이름없음',
+        setProfiles(ws.map((w: any) => ({
+          auth_id: w.auth_id,
+          username: w.username ?? '이름없음',
           role: w.role,
           department: w.department
         })));
@@ -111,13 +111,7 @@ export const useScheduleCalendar = () => {
   const getShiftsForDate = (date: string): Shift[] => {
     const monthKey = date.slice(0, 7);
     const monthShifts = shiftsByMonth[monthKey] ?? [];
-    return monthShifts.filter(s => s.date === date).map(s => {
-        if (!s.workerName && s.workerId) {
-            const u = workers.find(w => w.id === s.workerId);
-            return { ...s, workerName: u?.name ?? '미상' };
-        }
-        return s;
-    });
+    return monthShifts.filter(s => s.date === date);
   };
 
   const refreshShiftsForMonth = async (monthKey: string) => {
@@ -141,7 +135,7 @@ export const useScheduleCalendar = () => {
     viewType,
     setViewType,
     shiftsByMonth,
-    workers,
+    profiles,
     loading: loadingMonths.size > 0,
     today,
     currentMonthKey,

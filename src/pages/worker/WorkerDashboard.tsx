@@ -7,7 +7,8 @@ import { useNavigate } from 'react-router-dom';
 import { useWorkerDashboard } from '@/features/dashboard/worker/useWorkerDashboard';
 
 const WorkerDashboard: React.FC = () => {
-  const { user, attendance, loading, err, busy, startWork, endWork } = useWorkerDashboard();
+  const { user } = useAuth();
+  const { attendance, loading, err, busy, startWork, endWork } = useWorkerDashboard();
   const navigate = useNavigate();
 
   const quickActions = [
@@ -48,7 +49,7 @@ const WorkerDashboard: React.FC = () => {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-foreground">{user?.name}님의 대시보드</h1>
+        <h1 className="text-3xl font-bold text-foreground">{user?.username}님의 대시보드</h1>
         <p className="text-muted-foreground mt-2">
           오늘 {new Date().toLocaleDateString('ko-KR', {
             year: 'numeric', month: 'long', day: 'numeric', weekday: 'long'
@@ -80,11 +81,11 @@ const WorkerDashboard: React.FC = () => {
                     {attendance?.status === 'working' ? '근무 중' :
                      attendance?.status === 'ended' ? '근무 완료' : '미출근'}
                   </Badge>
-                  {attendance?.startAt && (
-                    <span className="text-sm text-muted-foreground">출근: {attendance.startAt}</span>
+                  {attendance?.start_at && (
+                    <span className="text-sm text-muted-foreground">출근: {attendance.start_at}</span>
                   )}
-                  {attendance?.endAt && (
-                    <span className="text-sm text-muted-foreground">퇴근: {attendance.endAt}</span>
+                  {attendance?.end_at && (
+                    <span className="text-sm text-muted-foreground">퇴근: {attendance.end_at}</span>
                   )}
                 </div>
               </div>

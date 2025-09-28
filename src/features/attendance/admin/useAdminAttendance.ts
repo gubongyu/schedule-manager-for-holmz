@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { api, type Attendance } from '@/lib/api';
-import type { Worker } from '@/domain';
+import { api } from '@/lib/api';
+import type { AttendanceLog, Profile } from '@/domain';
 
 const getLocalDateKey = (d: Date) => {
   const y = d.getFullYear();
@@ -11,8 +11,8 @@ const getLocalDateKey = (d: Date) => {
 
 export const useAdminAttendance = () => {
   const [selectedDate, setSelectedDate] = useState(getLocalDateKey(new Date()));
-  const [attendance, setAttendance] = useState<Attendance[]>([]);
-  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [attendance, setAttendance] = useState<AttendanceLog[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -21,14 +21,14 @@ export const useAdminAttendance = () => {
       try {
         const ws = await api.users.listWorkers();
         const normalized = ws.map((w: any) => ({
-          id: w.id,
-          name: w.name ?? w.username ?? '이름없음',
+          auth_id: w.auth_id,
+          username: w.username ?? '이름없음',
           department: w.department,
           role: w.role ?? 'worker',
-        })) as Worker[];
-        setWorkers(normalized);
+        })) as Profile[];
+        setProfiles(normalized);
       } catch (e: any) {
-        console.error("Failed to fetch workers", e);
+        console.error("Failed to fetch profiles", e);
       }
     })();
   }, []);
@@ -48,11 +48,11 @@ export const useAdminAttendance = () => {
     })();
   }, [selectedDate]);
 
-  const workerMap = useMemo(() => {
-    const m = new Map<string, Worker>();
-    workers.forEach(w => m.set(w.id, w));
+  const profileMap = useMemo(() => {
+    const m = new Map<string, Profile>();
+    profiles.forEach(p => m.set(p.auth_id, p));
     return m;
-  }, [workers]);
+  }, [profiles]);
 
   const stats = useMemo(() => ({
     total: attendance.length,
@@ -65,7 +65,7 @@ export const useAdminAttendance = () => {
     selectedDate,
     setSelectedDate,
     attendance,
-    workerMap,
+    profileMap,
     loading,
     err,
     stats,

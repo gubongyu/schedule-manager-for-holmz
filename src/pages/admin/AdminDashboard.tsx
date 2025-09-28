@@ -11,12 +11,13 @@ const AdminDashboard: React.FC = () => {
     loading,
     err,
     todayKey,
-    totalWorkers,
+    totalProfiles,
     todayAttendance,
     pendingSubs,
     todayAssignedCount,
     todayUnassignedCount,
     stats,
+    profileMap,
   } = useAdminDashboard();
 
   return (
@@ -59,8 +60,8 @@ const AdminDashboard: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
             <Card>
               <CardContent className="p-6 text-center">
-                <p className="text-2xl font-bold text-primary">{totalWorkers}</p>
-                <p className="text-sm text-muted-foreground">총 근무자</p>
+                <p className="text-2xl font-bold text-primary">{totalProfiles}</p>
+                <p className="text-sm text-muted-foreground">총 프로필</p>
               </CardContent>
             </Card>
             <Card>
@@ -99,19 +100,19 @@ const AdminDashboard: React.FC = () => {
             ) : (
               <div className="space-y-4">
                 {todayAttendance.slice(0, 5).map((att) => (
-                  <Card key={att.id ?? `${att.userId}-${att.date}`}>
+                  <Card key={att.id ?? `${att.user_uid}-${att.date}`}>
                     <CardContent className="p-6">
                       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 items-center">
                         <div className="col-span-2">
-                          <h3 className="font-medium">{att.userName ?? att.userId}</h3>
-                          <p className="text-sm text-muted-foreground">근무자</p>
+                          <h3 className="font-medium">{profileMap.get(att.user_uid)?.username ?? att.user_uid}</h3>
+                          <p className="text-sm text-muted-foreground">프로필</p>
                         </div>
                         <div>
-                          <p className="font-medium">{att.startAt ?? '미출근'}</p>
+                          <p className="font-medium">{att.start_at ?? '미출근'}</p>
                           <p className="text-sm text-muted-foreground">출근</p>
                         </div>
                         <div>
-                          <p className="font-medium">{att.endAt ?? '미퇴근'}</p>
+                          <p className="font-medium">{att.end_at ?? '미퇴근'}</p>
                           <p className="text-sm text-muted-foreground">퇴근</p>
                         </div>
                         <div className="flex justify-end">

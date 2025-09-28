@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 type Role = 'admin' | 'worker';
 
 type AppUser = {
-  id: string;
+  auth_id: string;
   email: string | null;
   username: string;
   role: Role;
@@ -29,7 +29,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadProfile = async (authId: string) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, username, role, department')
+      .select('auth_id, username, role, department')
       .eq('auth_id', authId)
       .maybeSingle();
 
@@ -39,7 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!data) return setUser(null);
 
     setUser({
-      id: data.id,
+      auth_id: data.auth_id,
       email: auth.email ?? null,
       username: data.username,
       role: data.role as Role,

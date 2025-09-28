@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import * as shiftApi from "@/lib/api/shifts";
 import { listWorkers } from "@/lib/api/users";
-import { Shift } from "@/lib/api/shifts";
+import { Shift, Profile } from "@/domain";
 
 type Row = {
-  workerId: string;
-  name: string;
+  profileId: string;
+  username: string;
   department?: string;
   minutes: number;
   shifts: number;
@@ -54,29 +54,24 @@ export const useAdminReport = () => {
   const [monthShifts, setMonthShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [workers, setWorkers] = useState<Array<{ id: string; name: string; department?: string }>>([]);
+  const [profiles, setProfiles] = useState<Profile[]>([]);
 
   useEffect(() => {
     (async () => {
       try {
-        const ws = await listWorkers();
-        const normalized = ws.map((w: any) => ({
-          id: w.id,
-          name: w.name ?? w.username ?? "이름없음",
-          department: w.department,
-        }));
-        setWorkers(normalized);
+        const ps = await listWorkers();
+        setProfiles(ps as Profile[]);
       } catch (e) {
         console.error(e);
       }
     })();
   }, []);
 
-  const userMap = useMemo(() => {
-    const map = new Map<string, { name: string; department?: string }>();
-    workers.forEach((u) => map.set(u.id, { name: u.name, department: u.department }));
+  const profileMap = useMemo(() => {
+    const map = new Map<string, { username: string; department?: string }>();
+    profiles.forEach((p) => map.set(p.auth_id, { username: p.username, department: p.department }));
     return map;
-  }, [workers]);
+  }, [profiles]);
 
   useEffect(() => {
     (async () => {
@@ -96,30 +91,30 @@ export const useAdminReport = () => {
   const rows = useMemo<Row[]>(() => {
     const acc = new Map<string, Row>();
     for (const s of monthShifts) {
-      const wId = s.workerId ?? "";
-      if (!wId) continue;
+      const pId = s.worker_uid ?? "";
+      if (!pId) continue;
       const addMin = diffMinutes(s.start, s.end);
-      const existing = acc.get(wId);
-      const meta = userMap.get(wId);
-      const name = s.workerName ?? meta?.name ?? "미상";
+      const existing = acc.get(pId);
+      const meta = profileMap.get(pId);
+      const username = meta?.username ?? "미상";
       const department = meta?.department;
       if (existing) {
         existing.minutes += addMin;
         existing.shifts += 1;
       } else {
-        acc.set(wId, { workerId: wId, name, department, minutes: addMin, shifts: 1 });
+        acc.set(pId, { profileId: pId, username, department, minutes: addMin, shifts: 1 });
       }
     }
     return Array.from(acc.values()).sort((a, b) => b.minutes - a.minutes);
-  }, [monthShifts, userMap]);
+  }, [monthShifts, profileMap]);
 
   const totalMinutes = useMemo(() => rows.reduce((sum, r) => sum + r.minutes, 0), [rows]);
 
   const exportCSV = () => {
-    const header = ["workerId", "name", "department", "shifts", "total_minutes", "total_hours"];
+    const header = ["profileId", "username", "department", "shifts", "total_minutes", "total_hours"];
     const body = rows.map((r) => [
-      r.workerId,
-      r.name,
+      r.profileId,
+      r.username,
       r.department ?? "",
       String(r.shifts),
       String(r.minutes),

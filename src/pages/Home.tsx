@@ -8,10 +8,12 @@ import { AdminCalendar } from '@/components/schedule-calendar/AdminCalendar';
 import { WorkerCalendar } from '@/components/schedule-calendar/WorkerCalendar';
 import { useHome } from '@/features/dashboard/useHome';
 
+import { useAuth } from '@/contexts/AuthContext';
+
 const Home: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const {
-    user,
     busy,
     workerState,
     adminState,
@@ -54,8 +56,8 @@ const Home: React.FC = () => {
                       {att?.status === 'working' ? '근무 중' :
                        att?.status === 'ended' ? '근무 완료' : '미출근'}
                     </Badge>
-                    {att?.startAt && <span className="text-sm text-muted-foreground">출근: {att.startAt}</span>}
-                    {att?.endAt && <span className="text-sm text-muted-foreground">퇴근: {att.endAt}</span>}
+                    {att?.start_at && <span className="text-sm text-muted-foreground">출근: {att.start_at}</span>}
+                    {att?.end_at && <span className="text-sm text-muted-foreground">퇴근: {att.end_at}</span>}
                   </div>
                 </div>
               </div>

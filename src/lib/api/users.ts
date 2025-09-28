@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 export const listWorkers = async () => {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, username, name, role, department')
+    .select('auth_id, username, role, department')
     .eq('role', 'worker')
     .order('username', { ascending: true });
   if (error) throw error;
@@ -16,7 +16,6 @@ export const listWorkers = async () => {
 export const createWorker = async (payload: { name: string; department: string }) => {
   // name은 display용, username도 같이 채워둠
   const insert = {
-    name: payload.name,
     username: payload.name,
     department: payload.department,
     role: 'worker',
@@ -25,7 +24,7 @@ export const createWorker = async (payload: { name: string; department: string }
   const { data, error } = await supabase
     .from('profiles')
     .insert(insert)
-    .select()
+    .select('auth_id, username, role, department')
     .single();
 
   if (error) throw error;
@@ -36,6 +35,6 @@ export const deleteWorker = async (id: string) => {
   const { error } = await supabase
     .from('profiles')
     .delete()
-    .eq('id', id);
+    .eq('auth_id', id);
   if (error) throw error;
 };

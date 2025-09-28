@@ -10,7 +10,7 @@ export const useAdminCalendar = () => {
 
   const [isAssignDialogOpen, setIsAssignDialogOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [selectedWorker, setSelectedWorker] = useState<string>('');
+  const [selectedProfileId, setSelectedProfileId] = useState<string>('');
   const [selectedStartTime, setSelectedStartTime] = useState<string | null>(null);
   const [selectedEndTime, setSelectedEndTime] = useState<string | null>(null);
 
@@ -58,14 +58,14 @@ export const useAdminCalendar = () => {
     setDragEndTime(null);
   };
 
-  const handleAssignWorker = async () => {
-    if (!selectedDate || !selectedWorker || !selectedStartTime || !selectedEndTime) return;
+  const handleAssignProfile = async () => {
+    if (!selectedDate || !selectedProfileId || !selectedStartTime || !selectedEndTime) return;
 
     // TODO: Implement api.shifts.assignShift
-    toast({ title: '[DEMO] 근무자 배정', description: `(실제 API 연동 필요) ${selectedWorker}님을 ${selectedDate} ${selectedStartTime}-${selectedEndTime}에 배정합니다.` });
+    toast({ title: '[DEMO] 프로필 배정', description: `(실제 API 연동 필요) ${selectedProfileId}님을 ${selectedDate} ${selectedStartTime}-${selectedEndTime}에 배정합니다.` });
     await shared.refreshShiftsForMonth(selectedDate.slice(0, 7));
     setIsAssignDialogOpen(false);
-    setSelectedWorker('');
+    setSelectedProfileId('');
   };
 
   return {
@@ -79,11 +79,11 @@ export const useAdminCalendar = () => {
     isAssignDialogOpen,
     setIsAssignDialogOpen,
     selectedDate,
-    selectedWorker,
-    setSelectedWorker,
+    selectedProfileId,
+    setSelectedProfileId,
     selectedStartTime,
     selectedEndTime,
-    handleAssignWorker,
+    handleAssignProfile,
     // Drag state
     isDragging,
     dragDateString,

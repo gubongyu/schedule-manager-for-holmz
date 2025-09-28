@@ -59,8 +59,8 @@ const MonthlyHoursReport: React.FC = () => {
                 </thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={r.workerId} className="hover:bg-muted/50">
-                      <td className="px-3 py-2 border-b border-border">{r.name}</td>
+                    <tr key={r.profileId} className="hover:bg-muted/50">
+                      <td className="px-3 py-2 border-b border-border">{r.username}</td>
                       <td className="px-3 py-2 border-b border-border">{r.department ?? "-"}</td>
                       <td className="px-3 py-2 border-b border-border">{r.shifts}</td>
                       <td className="px-3 py-2 border-b border-border font-medium">{minutesToHHhMM(r.minutes)}</td>

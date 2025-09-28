@@ -31,7 +31,7 @@ export const AdminCalendar: React.FC = () => {
                   <div key={`${s.date}-${s.start}-${idx}`} className="p-3 flex items-center justify-between">
                     <div>
                       <div className="text-sm font-medium">{s.start} - {s.end}</div>
-                      <div className="text-xs text-muted-foreground">{s.workerName ?? s.workerId ?? '미배정'}</div>
+                      <div className="text-xs text-muted-foreground">{hook.profiles.find(p => p.auth_id === s.worker_uid)?.username ?? s.worker_uid ?? '미배정'}</div>
                     </div>
                   </div>
                 ))}
@@ -43,24 +43,24 @@ export const AdminCalendar: React.FC = () => {
 
       <Dialog open={hook.isAssignDialogOpen} onOpenChange={hook.setIsAssignDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Users />근무자 배정</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Users />프로필 배정</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div><label>날짜</label><div className="mt-1 p-2 bg-muted rounded">{hook.selectedDate}</div></div>
               <div><label>시간</label><div className="mt-1 p-2 bg-muted rounded">{hook.selectedStartTime} - {hook.selectedEndTime}</div></div>
             </div>
             <div>
-              <label>근무자 선택</label>
-              <Select value={hook.selectedWorker} onValueChange={hook.setSelectedWorker}>
-                <SelectTrigger className="mt-1"><SelectValue placeholder="근무자를 선택하세요" /></SelectTrigger>
+              <label>프로필 선택</label>
+              <Select value={hook.selectedProfileId} onValueChange={hook.setSelectedProfileId}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="프로필을 선택하세요" /></SelectTrigger>
                 <SelectContent>
-                  {hook.workers.filter(w => w.role === 'worker').map(w => <SelectItem key={w.id} value={w.id}>{w.name}</SelectItem>)}
+                  {hook.profiles.filter(p => p.role === 'worker').map(p => <SelectItem key={p.auth_id} value={p.auth_id}>{p.username}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => hook.setIsAssignDialogOpen(false)}>취소</Button>
-              <Button onClick={hook.handleAssignWorker}>저장</Button>
+              <Button onClick={hook.handleAssignProfile}>저장</Button>
             </div>
           </div>
         </DialogContent>

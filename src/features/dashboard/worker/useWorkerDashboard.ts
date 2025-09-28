@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { toast } from '@/hooks/use-toast';
-import { api, type Attendance } from '@/lib/api';
+import { api, type AttendanceLog } from '@/lib/api';
 import { useAuth } from '@/contexts/AuthContext';
 
 type BusyKey = 'start' | 'end' | null;
@@ -15,32 +15,32 @@ const getLocalDateKey = (d: Date) => {
 export const useWorkerDashboard = () => {
   const { user } = useAuth();
   const [busy, setBusy] = useState<BusyKey>(null);
-  const [attendance, setAttendance] = useState<Attendance | null>(null);
+  const [attendance, setAttendance] = useState<AttendanceLog | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [err, setErr] = useState<string | null>(null);
 
   const today = useMemo(() => getLocalDateKey(new Date()), []);
 
   const fetchAttendance = useCallback(async () => {
-    if (!user?.id) return;
+    if (!user?.auth_id) return;
     setLoading(true);
     setErr(null);
     try {
-      const row = await api.attendance.getAttendanceByUserDate(user.id, today);
+      const row = await api.attendance.getAttendanceByUserDate(user.auth_id, today);
       setAttendance(row ?? null);
     } catch (e: any) {
       setErr(e?.message ?? '출퇴근 정보를 불러오지 못했습니다.');
     } finally {
       setLoading(false);
     }
-  }, [user?.id, today]);
+  }, [user?.auth_id, today]);
 
   useEffect(() => {
     fetchAttendance();
   }, [fetchAttendance]);
 
   const startWork = async () => {
-    if (!user?.id) return;
+    if (!user?.auth_id) return;
     if (attendance?.status === 'working' || attendance?.status === 'ended') {
       toast({
         variant: 'destructive',
@@ -52,7 +52,7 @@ export const useWorkerDashboard = () => {
 
     setBusy('start');
     try {
-      const updated = await api.attendance.startWork(user.id);
+      const updated = await api.attendance.startWork(user.auth_id);
       setAttendance(updated);
       toast({ title: '근무 시작', description: '근무를 시작했습니다.' });
     } catch (e: any) {
@@ -63,7 +63,7 @@ export const useWorkerDashboard = () => {
   };
 
   const endWork = async () => {
-    if (!user?.id) return;
+    if (!user?.auth_id) return;
     if (attendance?.status === 'ended') {
       toast({ variant: 'destructive', title: '이미 처리된 상태입니다', description: '이미 근무를 종료했습니다.' });
       return;
@@ -79,7 +79,7 @@ export const useWorkerDashboard = () => {
 
     setBusy('end');
     try {
-      const updated = await api.attendance.endWork(user.id);
+      const updated = await api.attendance.endWork(user.auth_id);
       setAttendance(updated);
       toast({ title: '근무 종료', description: '근무를 종료했습니다.' });
     } catch (e: any) {

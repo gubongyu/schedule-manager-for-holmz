@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
-import { api, type Attendance, type Shift } from '@/lib/api';
+import { api, type AttendanceLog, type Shift } from '@/lib/api';
 
 type BusyKey = 'start' | 'end' | null;
 
@@ -18,7 +18,7 @@ export const useHome = () => {
   const today = useMemo(() => getLocalDateKey(new Date()), []);
 
   // Worker-specific state
-  const [att, setAtt] = useState<Attendance | null>(null);
+  const [att, setAtt] = useState<AttendanceLog | null>(null);
   const [myShifts, setMyShifts] = useState<Shift[]>([]);
   const [wLoading, setWLoading] = useState<boolean>(true);
   const [wErr, setWErr] = useState<string | null>(null);
@@ -34,13 +34,13 @@ export const useHome = () => {
   useEffect(() => {
     if (user?.role !== 'worker') return;
     (async () => {
-      if (!user?.id) return;
+      if (!user?.auth_id) return;
       setWLoading(true);
       setWErr(null);
       try {
         const [attendance, shifts] = await Promise.all([
-          api.attendance.getAttendanceByUserDate(user.id, today),
-          api.shifts.getShiftsByWorker(user.id),
+          api.attendance.getAttendanceByUserDate(user.auth_id, today),
+          api.shifts.getShiftsByWorker(user.auth_id),
         ]);
         setAtt(attendance ?? null);
         setMyShifts(shifts ?? []);
@@ -50,7 +50,7 @@ export const useHome = () => {
         setWLoading(false);
       }
     })();
-  }, [user?.id, user?.role, today]);
+  }, [user?.auth_id, user?.role, today]);
 
   // Admin data fetching
   useEffect(() => {
@@ -92,14 +92,14 @@ export const useHome = () => {
   }, [user?.role, today]);
 
   const handleStartWork = async () => {
-    if (!user?.id) return;
+    if (!user?.auth_id) return;
     if (att?.status === 'working' || att?.status === 'ended') {
       toast({ variant: 'destructive', title: '이미 처리된 상태입니다' });
       return;
     }
     setBusy('start');
     try {
-      const updated = await api.attendance.startWork(user.id);
+      const updated = await api.attendance.startWork(user.auth_id);
       setAtt(updated);
       toast({ title: '근무 시작', description: '근무를 시작했습니다.' });
     } catch (e: any) {
@@ -110,14 +110,14 @@ export const useHome = () => {
   };
 
   const handleEndWork = async () => {
-    if (!user?.id) return;
+    if (!user?.auth_id) return;
     if (att?.status !== 'working') {
       toast({ variant: 'destructive', title: '근무를 시작해주세요' });
       return;
     }
     setBusy('end');
     try {
-      const updated = await api.attendance.endWork(user.id);
+      const updated = await api.attendance.endWork(user.auth_id);
       setAtt(updated);
       toast({ title: '근무 종료', description: '근무를 종료했습니다.' });
     } catch (e: any) {

@@ -42,6 +42,8 @@ const WorkerSubstitute: React.FC = () => {
     setTimeRange,
     todayKey,
     handleCreateRequest,
+    profileMap,
+    applicants,
   } = useWorkerSubstitution();
 
   return (
@@ -102,26 +104,29 @@ const WorkerSubstitute: React.FC = () => {
           <Card><CardContent className="py-12 text-center text-destructive">{err}</CardContent></Card>
         ) : userRequests.length > 0 ? (
           <div className="space-y-4">
-            {userRequests.map((request) => (
-              <Card key={request.id}>
-                <CardContent className="p-6">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h3 className="font-medium">{request.date}</h3>
-                      <p className="text-sm text-muted-foreground">{request.timeRange}</p>
-                      {request.applicants?.length > 0 && (
-                        <p className="text-sm text-muted-foreground mt-2">
-                          신청자: {request.applicants.map(a => a.name).join(', ')}
-                        </p>
-                      )}
+            {userRequests.map((request) => {
+              const requestApplicants = applicants.filter(a => a.substitution_id === request.id);
+              return (
+                <Card key={request.id}>
+                  <CardContent className="p-6">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <h3 className="font-medium">{request.date}</h3>
+                        <p className="text-sm text-muted-foreground">{request.start} - {request.end}</p>
+                        {requestApplicants.length > 0 && (
+                          <p className="text-sm text-muted-foreground mt-2">
+                            신청자: {requestApplicants.map(a => profileMap.get(a.user_uid)?.username ?? a.user_uid).join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <Badge variant={getStatusVariant(request.status)}>
+                        {getStatusText(request.status)}
+                      </Badge>
                     </div>
-                    <Badge variant={getStatusVariant(request.status)}>
-                      {getStatusText(request.status)}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         ) : (
           <Card><CardContent className="text-center py-12">
@@ -141,19 +146,20 @@ const WorkerSubstitute: React.FC = () => {
         ) : availableRequests.length > 0 ? (
           <div className="space-y-4">
             {availableRequests.map((request) => {
-              const alreadyApplied = request.applicants?.some(a => a.id === user?.id);
+              const alreadyApplied = applicants.some(a => a.substitution_id === request.id && a.user_uid === user?.auth_id);
+              const requestApplicants = applicants.filter(a => a.substitution_id === request.id);
               return (
                 <Card key={request.id}>
                   <CardContent className="p-6">
                     <div className="flex justify-between items-start">
                       <div>
-                        <h3 className="font-medium">{request.ownerName}님의 요청</h3>
+                        <h3 className="font-medium">{profileMap.get(request.owner_uid)?.username ?? request.owner_uid}님의 요청</h3>
                         <p className="text-sm text-muted-foreground">
-                          {request.date} · {request.timeRange}
+                          {request.date} · {request.start} - {request.end}
                         </p>
-                        {request.applicants?.length > 0 && (
+                        {requestApplicants.length > 0 && (
                           <p className="text-sm text-muted-foreground mt-2">
-                            신청자 {request.applicants.length}명
+                            신청자 {requestApplicants.length}명
                           </p>
                         )}
                       </div>

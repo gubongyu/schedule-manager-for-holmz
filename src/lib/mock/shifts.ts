@@ -1,4 +1,4 @@
-import { Shift } from '@/types';
+import { Shift } from '@/domain';
 
 const generateShifts = (): Shift[] => {
   const shifts: Shift[] = [];
@@ -17,36 +17,36 @@ const generateShifts = (): Shift[] => {
     
     if (isWeekend) {
       // Weekend shifts - rotating workers
-      const workerId = day % 2 === 0 ? 'worker1' : 'worker2';
+      const worker_uid = day % 2 === 0 ? 'worker1' : 'worker2';
       shifts.push({
         id: `shift-${dateString}`,
         date: dateString,
         start: '07:00',
         end: '22:00',
-        workerId,
+        worker_uid,
         isWeekend: true
       });
     } else {
       // Weekday shifts - fixed assignments
-      let workerId: string;
+      let worker_uid: string;
       switch (dayOfWeek) {
         case 1: // Monday
-          workerId = 'worker1';
+          worker_uid = 'worker1';
           break;
         case 2: // Tuesday
-          workerId = 'worker2';
+          worker_uid = 'worker2';
           break;
         case 3: // Wednesday
-          workerId = 'worker3';
+          worker_uid = 'worker3';
           break;
         case 4: // Thursday
-          workerId = 'worker4';
+          worker_uid = 'worker4';
           break;
         case 5: // Friday
-          workerId = 'worker5';
+          worker_uid = 'worker5';
           break;
         default:
-          workerId = 'worker1';
+          worker_uid = 'worker1';
       }
       
       shifts.push({
@@ -54,7 +54,7 @@ const generateShifts = (): Shift[] => {
         date: dateString,
         start: '00:00',
         end: '24:00',
-        workerId,
+        worker_uid,
         isWeekend: false
       });
     }
@@ -70,7 +70,7 @@ export const getShiftsByMonth = (month: string): Shift[] => {
 };
 
 export const getShiftsByWorker = (workerId: string): Shift[] => {
-  return mockShifts.filter(shift => shift.workerId === workerId);
+  return mockShifts.filter(shift => shift.worker_uid === workerId);
 };
 
 export const getShiftByDate = (date: string): Shift | undefined => {

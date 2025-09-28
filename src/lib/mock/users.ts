@@ -1,49 +1,49 @@
-import { User } from '@/types';
+import { Profile } from '@/domain';
 
-export const mockUsers: User[] = [
+export const mockUsers: Profile[] = [
   {
-    id: 'admin',
-    name: '관리자',
+    auth_id: 'admin',
+    username: '관리자',
     role: 'admin'
   },
   {
-    id: 'worker1',
-    name: '김민수',
+    auth_id: 'worker1',
+    username: '김민수',
     role: 'worker',
     department: '영업팀'
   },
   {
-    id: 'worker2',
-    name: '이서영',
+    auth_id: 'worker2',
+    username: '이서영',
     role: 'worker',
     department: '학생'
   },
   {
-    id: 'worker3',
-    name: '박정호',
+    auth_id: 'worker3',
+    username: '박정호',
     role: 'worker',
     department: '개발팀'
   },
   {
-    id: 'worker4',
-    name: '최은지',
+    auth_id: 'worker4',
+    username: '최은지',
     role: 'worker',
     department: '디자인팀'
   },
   {
-    id: 'worker5',
-    name: '정재훈',
+    auth_id: 'worker5',
+    username: '정재훈',
     role: 'worker',
     department: '인사팀'
   },
   {
-    id: 'worker6',
-    name: '한유진',
+    auth_id: 'worker6',
+    username: '한유진',
     role: 'worker',
     department: '재무팀'
   }
 ];
 
-export const findUserById = (id: string): User | undefined => {
-  return mockUsers.find(user => user.id === id);
+export const findProfileById = (id: string): Profile | undefined => {
+  return mockUsers.find(user => user.auth_id === id);
 };
