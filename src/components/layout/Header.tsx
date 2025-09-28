@@ -16,7 +16,7 @@ const Header: React.FC = () => {
           <div className="flex items-center space-x-4">
             <h1 
               className="text-xl font-bold text-foreground cursor-pointer hover:text-primary transition-colors"
-              onClick={() => navigate('/')}
+              onClick={() => navigate(user.role === 'admin' ? '/admin/dashboard' : '/worker/dashboard')}
             >
               HOLMZ
             </h1>

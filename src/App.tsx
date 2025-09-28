@@ -19,6 +19,8 @@ import AdminAttendance from "./pages/admin/AdminAttendance";
 import AdminReport from "./pages/admin/AdminReport";
 import Home from "./pages/Home";
 import NotFound from "./pages/NotFound";
+import WorkerWorkLog from "./pages/worker/WorkerWorkLog";
+import AdminWorkLogReport from "./pages/admin/AdminWorkLogReport";
 
 const queryClient = new QueryClient();
 
@@ -61,7 +63,7 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRole="worker">
                   <Layout>
-                    <Home />
+                    <WorkerSchedule />
                   </Layout>
                 </ProtectedRoute>
               } 
@@ -72,6 +74,16 @@ const App = () => (
                 <ProtectedRoute requiredRole="worker">
                   <Layout>
                     <WorkerSubstitute />
+                  </Layout>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/worker/work-log" 
+              element={
+                <ProtectedRoute requiredRole="worker">
+                  <Layout>
+                    <WorkerWorkLog />
                   </Layout>
                 </ProtectedRoute>
               } 
@@ -127,6 +139,14 @@ const App = () => (
                   </Layout>
                 </ProtectedRoute>} />
             
+            <Route
+              path="/admin/reports/work-log"
+              element={<ProtectedRoute requiredRole="admin">
+                  <Layout>
+                    <AdminWorkLogReport />
+                  </Layout>
+                </ProtectedRoute>} />
+
             {/* Catch-all 404 route */}
             <Route path="*" element={<NotFound />} />
           </Routes>

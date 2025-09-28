@@ -67,7 +67,7 @@ const Home: React.FC = () => {
 
         <WorkerCalendar myShifts={workerState.myShifts} />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Button
             variant="success"
             onClick={handleStartWork}
@@ -90,6 +90,12 @@ const Home: React.FC = () => {
             className="h-16"
           >
             대체 근무 요청
+          </Button>
+          <Button
+            onClick={() => navigate('/worker/work-log')}
+            className="h-16"
+          >
+            업무 기록
           </Button>
         </div>
       </div>
@@ -166,18 +172,21 @@ const Home: React.FC = () => {
         </Card>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Button onClick={() => navigate('/admin/workers')} className="h-16">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <Button variant="default" onClick={() => navigate('/admin/workers')} className="h-16">
           근무자 관리
         </Button>
-        <Button onClick={() => navigate('/admin/requests')} className="h-16">
+        <Button variant="secondary" onClick={() => navigate('/admin/requests')} className="h-16">
           대체 요청 관리
         </Button>
-        <Button onClick={() => navigate('/admin/attendance')} className="h-16">
+        <Button variant="default" onClick={() => navigate('/admin/attendance')} className="h-16">
           출퇴근 기록
         </Button>
-        <Button onClick={() => navigate('/admin/reports/monthly-hours')} className="h-16">
-          보고서
+        <Button variant="outline" onClick={() => navigate('/admin/reports')} className="h-16">
+          월별 근무시간 보고서
+        </Button>
+        <Button variant="outline" onClick={() => navigate('/admin/reports/work-log')} className="h-16">
+          업무 기록 보고서
         </Button>
       </div>
     </div>
