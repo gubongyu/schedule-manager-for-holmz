@@ -1,20 +1,19 @@
+
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { toast } from '@/hooks/use-toast';
 import { api } from '@/lib/api';
+import type { Worker } from '@/domain';
 
-export type Worker = {
-  id: string;
-  name: string;
-  department?: string;
-  role: 'worker' | 'admin';
-};
-
-export const useWorkers = () => {
+export const useUserManagement = () => {
   const [rows, setRows] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
+
+  // State for the add worker form
+  const [newWorkerName, setNewWorkerName] = useState('');
+  const [newWorkerDept, setNewWorkerDept] = useState('');
 
   const fetchWorkers = useCallback(async () => {
     setLoading(true);
@@ -70,6 +69,18 @@ export const useWorkers = () => {
     }
   };
 
+  const handleAddWorker = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await addWorker({ name: newWorkerName, department: newWorkerDept });
+      setNewWorkerName('');
+      setNewWorkerDept('');
+    } catch (e) {
+      // Error is already handled by the toast in the hook
+      console.error(e);
+    }
+  };
+
   const deleteWorker = async (workerId: string, workerName: string) => {
     setDeletingId(workerId);
     try {
@@ -94,7 +105,12 @@ export const useWorkers = () => {
     err,
     deletingId,
     isAdding,
-    addWorker,
     deleteWorker,
+    // For Add Worker Form
+    newWorkerName,
+    setNewWorkerName,
+    newWorkerDept,
+    setNewWorkerDept,
+    handleAddWorker,
   };
 };

@@ -1,14 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
-
-export type Attendance = {
-  id?: number;
-  userId: string;
-  userName?: string;
-  date: string;    // 'YYYY-MM-DD'
-  startAt?: string; // 'HH:MM'
-  endAt?: string;   // 'HH:MM'
-  status: 'working' | 'ended' | 'not_started';
-};
+import type { Attendance } from '@/domain';
 
 const fmt = (t?: string | null) => (t ? t.slice(0,5) : undefined);
 const todayKey = () => new Date().toISOString().slice(0,10);

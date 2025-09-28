@@ -4,9 +4,7 @@ import * as shifts from './shifts';
 import * as substitutions from './substitutions';
 import * as users from './users';
 
-export type { Attendance } from './attendance';
-export type { Shift } from './shifts';
-export type { SubstitutionRequest } from './substitutions';
+export type { Attendance, Shift, SubstitutionRequest } from '@/domain';
 
 export const api = {
   attendance,

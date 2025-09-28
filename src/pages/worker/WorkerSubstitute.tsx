@@ -1,35 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { toast } from '@/hooks/use-toast';
-import { useWorkerSubstitutions } from '@/hooks/useWorkerSubstitutions';
+import { useWorkerSubstitution } from '@/features/substitution/worker/useWorkerSubstitution';
 
 type Status = 'pending' | 'approved' | 'rejected';
-
-const getLocalDateKey = (d: Date) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-
-const parseTimeRange = (text: string): { start: string; end: string } | null => {
-  const m = text.match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
-  if (!m) return null;
-  let [ , sh, sm, eh, em ] = m;
-  const Hs = Number(sh), Ms = Number(sm), He = Number(eh), Me = Number(em);
-  const validHH = (h: number) => h >= 0 && h <= 24;
-  const validMM = (m: number) => m >= 0 && m <= 59;
-  if (!validHH(Hs) || !validHH(He) || !validMM(Ms) || !validMM(Me)) return null;
-  if (Hs === 24 || (He === 24 && Me !== 0)) return null;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const start = `${pad(Hs)}:${pad(Ms)}`;
-  const end   = `${pad(He)}:${pad(Me)}`;
-  return { start, end };
-};
 
 const getStatusText = (status: Status | string) => {
   switch (status) {
@@ -58,35 +35,14 @@ const WorkerSubstitute: React.FC = () => {
     err,
     creating,
     applyingId,
-    createRequest,
     applyToRequest,
-  } = useWorkerSubstitutions();
-
-  const [requestDate, setRequestDate] = useState('');
-  const [timeRange, setTimeRange] = useState('');
-  const todayKey = useMemo(() => getLocalDateKey(new Date()), []);
-
-  const handleCreateRequest = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const parsed = parseTimeRange(timeRange.trim());
-    if (!parsed) {
-      toast({
-        variant: 'destructive',
-        title: '시간대 형식이 올바르지 않습니다',
-        description: '예: 07:00 - 15:00 형식으로 입력하세요.',
-      });
-      return;
-    }
-
-    try {
-      await createRequest({ date: requestDate, ...parsed });
-      setRequestDate('');
-      setTimeRange('');
-    } catch (e) {
-      // Error is handled by the hook
-      console.error(e);
-    }
-  };
+    requestDate,
+    setRequestDate,
+    timeRange,
+    setTimeRange,
+    todayKey,
+    handleCreateRequest,
+  } = useWorkerSubstitution();
 
   return (
     <div className="space-y-8">

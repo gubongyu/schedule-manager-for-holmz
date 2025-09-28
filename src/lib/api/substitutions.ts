@@ -1,16 +1,5 @@
 import { supabase } from '@/lib/supabaseClient';
-
-// UI에서 기대하는 형태
-export type SubstitutionRequest = {
-  id: string | number;
-  date: string;          // 'YYYY-MM-DD'
-  timeRange: string;     // 'HH:MM - HH:MM'
-  ownerId: string;
-  ownerName: string;
-  applicants: Array<{ id: string; name: string }>;
-  status: 'pending' | 'approved' | 'rejected';
-  createdAt: string;     // ISO
-};
+import type { SubstitutionRequest } from '@/domain';
 
 // time 문자열 다듬기
 const fmt = (t?: string | null) => t ? t.slice(0, 5) : '00:00';

@@ -1,40 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { api } from '@/lib/api';
-import { Shift } from '@/lib/api/shifts';
+import { useWorkerSchedule } from '@/features/schedule/worker/useWorkerSchedule';
 
 const WorkerSchedule: React.FC = () => {
-  const { user } = useAuth();
-  const [currentDate] = useState(new Date());
-  const [myShifts, setMyShifts] = useState<Shift[]>([]);
-  const [monthShifts, setMonthShifts] = useState<Shift[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const currentMonth = currentDate.toISOString().slice(0, 7); // YYYY-MM
-  const today = new Date().toISOString().split('T')[0];
-
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!user) return;
-      setLoading(true);
-      try {
-        const [myShiftsData, monthShiftsData] = await Promise.all([
-          api.shifts.getShiftsByWorker(user.id),
-          api.shifts.getShiftsByMonth(currentMonth),
-        ]);
-        setMyShifts(myShiftsData);
-        setMonthShifts(monthShiftsData);
-      } catch (error) {
-        console.error("Failed to fetch shifts", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [user, currentMonth]);
+  const {
+    loading,
+    currentDate,
+    today,
+    myShifts,
+  } = useWorkerSchedule();
 
   const renderMonthCalendar = () => {
     const year = currentDate.getFullYear();

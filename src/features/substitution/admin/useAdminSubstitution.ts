@@ -4,7 +4,7 @@ import { api, type SubstitutionRequest } from '@/lib/api';
 
 type Status = 'pending' | 'approved' | 'rejected';
 
-export const useSubstitutionRequests = () => {
+export const useAdminSubstitution = () => {
   const [requests, setRequests] = useState<SubstitutionRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);

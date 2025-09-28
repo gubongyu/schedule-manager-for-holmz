@@ -2,7 +2,7 @@ import React from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { useSubstitutionRequests } from '@/hooks/useSubstitutionRequests';
+import { useAdminSubstitution } from '@/features/substitution/admin/useAdminSubstitution';
 
 type Status = 'pending' | 'approved' | 'rejected';
 
@@ -32,7 +32,7 @@ const AdminRequests: React.FC = () => {
     updateRequestStatus,
     pendingRequests,
     processedRequests,
-  } = useSubstitutionRequests();
+  } = useAdminSubstitution();
 
   return (
     <div className="space-y-8">

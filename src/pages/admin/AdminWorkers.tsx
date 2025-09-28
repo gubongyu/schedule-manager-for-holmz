@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { useWorkers, type Worker } from '@/hooks/useWorkers';
+import { useUserManagement } from '@/features/user-management/admin/useUserManagement';
+import type { Worker } from '@/domain';
 
 const AdminWorkers: React.FC = () => {
   const {
@@ -13,24 +14,13 @@ const AdminWorkers: React.FC = () => {
     err,
     deletingId,
     isAdding,
-    addWorker,
     deleteWorker,
-  } = useWorkers();
-
-  const [newWorkerName, setNewWorkerName] = useState('');
-  const [newWorkerDept, setNewWorkerDept] = useState('');
-
-  const handleAddWorker = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await addWorker({ name: newWorkerName, department: newWorkerDept });
-      setNewWorkerName('');
-      setNewWorkerDept('');
-    } catch (e) {
-      // Error is already handled by the toast in the hook
-      console.error(e);
-    }
-  };
+    newWorkerName,
+    setNewWorkerName,
+    newWorkerDept,
+    setNewWorkerDept,
+    handleAddWorker,
+  } = useUserManagement();
 
   return (
     <div className="space-y-8">

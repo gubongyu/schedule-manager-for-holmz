@@ -4,8 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Clock, BarChart3, Users } from 'lucide-react';
-import WorkScheduleCalendar from '@/components/shared/WorkScheduleCalendar';
-import { useHome } from '@/hooks/useHome';
+import { AdminCalendar } from '@/components/schedule-calendar/AdminCalendar';
+import { WorkerCalendar } from '@/components/schedule-calendar/WorkerCalendar';
+import { useHome } from '@/features/dashboard/useHome';
 
 const Home: React.FC = () => {
   const navigate = useNavigate();
@@ -62,11 +63,7 @@ const Home: React.FC = () => {
           </CardContent>
         </Card>
 
-        <WorkScheduleCalendar
-          userRole="worker"
-          userId={user.id}
-          myShifts={myShifts}
-        />
+        <WorkerCalendar myShifts={workerState.myShifts} />
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Button
@@ -106,7 +103,7 @@ const Home: React.FC = () => {
         <p className="text-muted-foreground mt-2">전체 근무 일정을 확인하고 관리하세요</p>
       </div>
 
-      <WorkScheduleCalendar userRole="admin" />
+      <AdminCalendar />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>

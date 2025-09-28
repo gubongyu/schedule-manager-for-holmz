@@ -1,11 +1,6 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { api, type Attendance } from '@/lib/api';
-
-export type Worker = {
-  id: string;
-  name: string;
-  department?: string;
-};
+import type { Worker } from '@/domain';
 
 const getLocalDateKey = (d: Date) => {
   const y = d.getFullYear();
@@ -29,6 +24,7 @@ export const useAdminAttendance = () => {
           id: w.id,
           name: w.name ?? w.username ?? '이름없음',
           department: w.department,
+          role: w.role ?? 'worker',
         })) as Worker[];
         setWorkers(normalized);
       } catch (e: any) {

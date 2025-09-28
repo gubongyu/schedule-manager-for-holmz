@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useNavigate } from 'react-router-dom';
-import { useWorkerDashboard } from '@/hooks/useWorkerDashboard';
+import { useWorkerDashboard } from '@/features/dashboard/worker/useWorkerDashboard';
 
 const WorkerDashboard: React.FC = () => {
   const { user, attendance, loading, err, busy, startWork, endWork } = useWorkerDashboard();

@@ -1,73 +1,20 @@
-// HOLMZ Schedule Management - 로그인 페이지 (id/password + 빠른 로그인 유지)
-
-import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { useAuth } from "@/contexts/AuthContext";
+import React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/hooks/use-toast";
-import { LogIn, Building2, User, KeyRound, ChevronRight } from "lucide-react";
+import { LogIn, Building2, User, KeyRound } from "lucide-react";
+import { useLogin } from "@/features/authentication/useLogin";
 
 const Login: React.FC = () => {
-  const [id, setId] = useState("");
-  const [password, setPassword] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-
-  const { login, isAuthenticated, user } = useAuth();
-  const navigate = useNavigate();
-  const { toast } = useToast();
-
-  useEffect(() => {
-    if (isAuthenticated && user) {
-      if (user.role === "admin") {
-        navigate("/admin/dashboard");
-      } else {
-        navigate("/worker/dashboard");
-      }
-    }
-  }, [isAuthenticated, user, navigate]);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!id.trim() || !password.trim()) {
-      toast({
-        variant: "destructive",
-        title: "아이디/비밀번호를 입력해주세요",
-        description: "로그인하려면 두 항목 모두 필요합니다.",
-      });
-      return;
-    }
-
-    setIsLoading(true);
-    const result = await login(id, password);
-
-    if (result.success) {
-      toast({
-        title: "로그인 성공",
-        description: "환영합니다!",
-      });
-      // 리다이렉트는 useEffect에서 role 기준으로 처리
-    } else {
-      toast({
-        variant: "destructive",
-        title: "로그인 실패",
-        description: result.error || "아이디 또는 비밀번호를 확인하세요.",
-      });
-    }
-    setIsLoading(false);
-  };
-
-  const handleQuickLogin = (userType: "worker" | "admin") => {
-    if (userType === "worker") {
-      setId("worker1");
-      setPassword("1234");
-    } else {
-      setId("admin");
-      setPassword("admin");
-    }
-  };
+  const {
+    id,
+    setId,
+    password,
+    setPassword,
+    isLoading,
+    handleSubmit,
+  } = useLogin();
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-4">

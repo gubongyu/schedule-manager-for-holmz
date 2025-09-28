@@ -1,15 +1,5 @@
-// src/lib/api/shifts.ts
 import { supabase } from '@/lib/supabaseClient';
-import { log } from 'console';
-
-export type Shift = {
-  id: number | string;
-  date: string;      // 'YYYY-MM-DD'
-  start: string;     // 'HH:MM'
-  end: string;       // 'HH:MM'
-  workerId?: string | null;
-  isWeekend?: boolean;
-};
+import type { Shift } from '@/domain';
 
 // 'HH:MM:SS' → 'HH:MM'로 정리 + 23:59:59 → 24:00(표시용) 처리
 const fmtHHMM = (t?: string | null) => {

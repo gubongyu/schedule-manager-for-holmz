@@ -1,69 +1,23 @@
-// src/pages/admin/AdminDashboard.tsx
-import React, { useEffect, useMemo, useState } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { api, type Attendance } from '@/lib/api';
-
-const getLocalDateKey = (d: Date) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
+import { useAdminDashboard } from '@/features/dashboard/admin/useAdminDashboard';
 
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-
-  const todayKey = getLocalDateKey(new Date());
-
-  const [totalWorkers, setTotalWorkers] = useState<number>(0);
-  const [todayAttendance, setTodayAttendance] = useState<Attendance[]>([]);
-  const [pendingSubs, setPendingSubs] = useState<number>(0);
-
-  // 선택: 오늘 시프트(배정/미배정) 간단 통계가 필요하면 사용
-  const [todayAssignedCount, setTodayAssignedCount] = useState<number>(0);
-  const [todayUnassignedCount, setTodayUnassignedCount] = useState<number>(0);
-
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setErr(null);
-      try {
-        // 근무자 수
-        const nWorkers = (await api.users.listWorkers()).length;
-        setTotalWorkers(nWorkers);
-
-        // 오늘 출퇴근
-        const att = await api.attendance.getAttendanceByDate(todayKey);
-        setTodayAttendance(att ?? []);
-
-        // 대체요청 대기 건수
-        const pending = await api.substitutions.countSubstitutionsByStatus('pending');
-        setPendingSubs(pending);
-
-        // 오늘 시프트 배정/미배정 (optional)
-        const monthKey = todayKey.slice(0, 7);
-        const shifts = await api.shifts.getShiftsByMonth(monthKey);
-        const todays = shifts.filter(s => s.date === todayKey);
-        setTodayAssignedCount(todays.filter(s => !!s.workerId).length);
-        setTodayUnassignedCount(todays.filter(s => !s.workerId).length);
-      } catch (e: any) {
-        setErr(e?.message ?? '대시보드 데이터를 불러오지 못했습니다.');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [todayKey]);
-
-  const stats = useMemo(() => {
-    const working = todayAttendance.filter(a => a.status === 'working').length;
-    const ended = todayAttendance.filter(a => a.status === 'ended').length;
-    return { working, ended };
-  }, [todayAttendance]);
+  const {
+    loading,
+    err,
+    todayKey,
+    totalWorkers,
+    todayAttendance,
+    pendingSubs,
+    todayAssignedCount,
+    todayUnassignedCount,
+    stats,
+  } = useAdminDashboard();
 
   return (
     <div className="space-y-8">
