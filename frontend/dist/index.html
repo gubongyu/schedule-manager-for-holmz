@@ -1,1 +1,32 @@
-<!DOCTYPE html><html><head><meta charset="utf-8"><title>HOLMZ</title></head><body>HOLMZ</body></html>
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOLMZ 근로 종합 관리</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<nav id="nav">
+  <div class="brand">HOLMZ</div>
+  <button data-view="dashboard" class="active">대시보드</button>
+  <button data-view="worklog">근로기록</button>
+  <button data-view="checklist-open">오픈 체크리스트</button>
+  <button data-view="checklist-close">마감 체크리스트</button>
+  <div class="nav-sep">관리자</div>
+  <button data-view="admin-worklog">근로기록 관리</button>
+  <button data-view="admin-checklist">체크리스트 관리</button>
+  <button data-view="admin-employees">직원 관리</button>
+</nav>
+<main id="main">
+  <header id="topbar">
+    <span id="today"></span>
+    <label>근무자
+      <select id="employee-select"></select>
+    </label>
+  </header>
+  <section id="view"></section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
