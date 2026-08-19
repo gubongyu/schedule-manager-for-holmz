@@ -82,6 +82,8 @@ func main() {
 		},
 		OnStartup: app.startup,
 		Bind:      []any{app},
+		// 창을 닫아도 종료하지 않고 트레이에 상주한다. 종료는 트레이 메뉴의 "종료"로.
+		HideWindowOnClose: true,
 		SingleInstanceLock: &options.SingleInstanceLock{
 			UniqueId: "holmz-schedule-manager",
 			OnSecondInstanceLaunch: func(data options.SecondInstanceData) {

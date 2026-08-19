@@ -44,6 +44,7 @@ func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, chec
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	go a.player.RunWatchdog(ctx)
+	startTray(a)
 	if a.startupAction != "" {
 		a.HandleAction(a.startupAction)
 	}

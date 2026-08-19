@@ -40,6 +40,10 @@
 
 체크리스트 항목의 [📷 사진] 버튼으로 이미지를 첨부한다(청소 상태·재고 확인 등). 파일은 `%APPDATA%\HOLMZ\photos\`에 복사 저장되고, Drive 업로드 시트의 "첨부사진" 열에 경로가 기록된다.
 
+## 시스템 트레이 상주
+
+창을 닫아도 종료되지 않고 트레이 아이콘으로 상주한다. 트레이 메뉴: **HOLMZ 열기**(창 표시) / **지금 동기화**(Drive 업로드) / **종료**(완전 종료). 스케줄 트리거가 오면 숨겨진 창이 자동으로 표시된다.
+
 ## 테스트
 
     go test ./...
@@ -48,7 +52,7 @@
 
 기획서(`HOLMZ_기획서_및_아키텍처.md`) 13장 헥사고날 아키텍처를 따른다.
 
-- `cmd/holmz` — Wails 부트스트랩 + App 파사드 (+ `--action` 트리거 처리)
+- `cmd/holmz` — Wails 부트스트랩 + App 파사드 (+ `--action` 트리거, 시스템 트레이)
 - `internal/domain` — 엔티티 + Port 인터페이스
 - `internal/service` — WorkLog / Checklist / Sync / Schedule / Player 서비스
 - `internal/repository/sqlite` — Pure Go SQLite 어댑터
@@ -58,7 +62,6 @@
 
 ## 제한사항 / 남은 작업
 
-- 시스템 트레이 상주(Wails v2 미지원 — v3 이전 시 도입)
 - OAuth 토큰·PIN은 로컬에 평문 저장 — Credential Manager 연동/해시 저장은 후속 보안 강화 항목
 - 절전 모드 깨우기(`WakeToRun`)는 schtasks CLI로 설정 불가 — 필요 시 작업 스케줄러 GUI에서 해당 작업의 "이 작업을 실행하기 위해 절전 모드 종료" 옵션을 켤 것
 - Windows 실기에서 UAC·스케줄 트리거·재생 화면 동작 검증 필요 (WSL에서는 GUI 실행 불가)
