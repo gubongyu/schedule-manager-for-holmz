@@ -90,6 +90,11 @@ func (r *ChecklistRepo) SetChecked(entryID int64, checked bool, checkedAt, check
 	return err
 }
 
+func (r *ChecklistRepo) SetPhoto(entryID int64, path string) error {
+	_, err := r.db.SQL.Exec("UPDATE checklist_entries SET photo_path=? WHERE id=?", path, entryID)
+	return err
+}
+
 func (r *ChecklistRepo) SaveCompletion(c *domain.ChecklistCompletion) error {
 	_, err := r.db.SQL.Exec(
 		"INSERT OR REPLACE INTO checklist_completions (date, type, completed_at, completed_by) VALUES (?,?,?,?)",

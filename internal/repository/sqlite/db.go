@@ -65,6 +65,10 @@ CREATE TABLE IF NOT EXISTS playlist_items (
 	video_id TEXT NOT NULL,
 	active INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS app_settings (
+	key TEXT PRIMARY KEY,
+	value TEXT NOT NULL DEFAULT ''
+);
 CREATE TABLE IF NOT EXISTS checklist_completions (
 	date TEXT NOT NULL,
 	type TEXT NOT NULL,

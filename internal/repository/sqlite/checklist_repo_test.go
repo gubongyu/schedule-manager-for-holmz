@@ -76,3 +76,31 @@ func TestChecklistEntriesLifecycle(t *testing.T) {
 		t.Fatalf("GetCompletion = %+v, err=%v", c, err)
 	}
 }
+
+func TestChecklistSetPhoto(t *testing.T) {
+	db := openTestDB(t)
+	repo := NewChecklistRepo(db)
+	if err := repo.CreateTemplate(&domain.ChecklistTemplate{Type: "open", Name: "청소", SortOrder: 1, Active: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.EnsureEntries("2026-08-19", "open"); err != nil {
+		t.Fatal(err)
+	}
+	entries, _ := repo.ListEntries("2026-08-19", "open")
+
+	if err := repo.SetPhoto(entries[0].ID, `C:\photos\entry_1.jpg`); err != nil {
+		t.Fatalf("SetPhoto: %v", err)
+	}
+	entries, _ = repo.ListEntries("2026-08-19", "open")
+	if entries[0].PhotoPath != `C:\photos\entry_1.jpg` {
+		t.Errorf("PhotoPath = %q", entries[0].PhotoPath)
+	}
+
+	if err := repo.SetPhoto(entries[0].ID, ""); err != nil {
+		t.Fatalf("SetPhoto clear: %v", err)
+	}
+	entries, _ = repo.ListEntries("2026-08-19", "open")
+	if entries[0].PhotoPath != "" {
+		t.Errorf("PhotoPath after clear = %q, want empty", entries[0].PhotoPath)
+	}
+}

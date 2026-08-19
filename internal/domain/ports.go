@@ -35,6 +35,12 @@ type TaskScheduler interface {
 	Unregister(taskName string) error
 }
 
+// SettingsRepo 는 앱 설정(키-값) 저장소 Port다. 없는 키는 빈 값을 반환한다.
+type SettingsRepo interface {
+	Get(key string) (string, error)
+	Set(key, value string) error
+}
+
 // PlaylistRepo 는 재생목록 저장소 Port다.
 type PlaylistRepo interface {
 	Create(p *PlaylistItem) error
@@ -61,6 +67,8 @@ type ChecklistRepo interface {
 	EnsureEntries(date, typ string) error
 	ListEntries(date, typ string) ([]ChecklistEntry, error)
 	SetChecked(entryID int64, checked bool, checkedAt, checkedBy string) error
+	// SetPhoto 는 항목의 첨부 사진 경로를 저장한다. 빈 문자열이면 첨부 해제.
+	SetPhoto(entryID int64, path string) error
 	SaveCompletion(c *ChecklistCompletion) error
 	GetCompletion(date, typ string) (*ChecklistCompletion, error)
 }
