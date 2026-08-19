@@ -13,10 +13,13 @@ type App struct {
 	employees domain.EmployeeRepo
 	worklog   *service.WorkLogService
 	checklist *service.ChecklistService
+	sync      *service.SyncService
+	drive     domain.DrivePort
 }
 
-func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, checklist *service.ChecklistService) *App {
-	return &App{employees: employees, worklog: worklog, checklist: checklist}
+func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, checklist *service.ChecklistService,
+	sync *service.SyncService, drive domain.DrivePort) *App {
+	return &App{employees: employees, worklog: worklog, checklist: checklist, sync: sync, drive: drive}
 }
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }
@@ -66,3 +69,11 @@ func (a *App) UpdateChecklistTemplate(t domain.ChecklistTemplate) error {
 	return a.checklist.UpdateTemplate(&t)
 }
 func (a *App) RemoveChecklistTemplate(id int64) error { return a.checklist.RemoveTemplate(id) }
+
+// --- Google Drive 동기화 ---
+
+func (a *App) GoogleAuthorized() bool { return a.drive.Authorized() }
+func (a *App) GoogleAuthorize() error { return a.drive.Authorize() }
+func (a *App) SyncNow() (*service.SyncResult, error) {
+	return a.sync.SyncPending()
+}

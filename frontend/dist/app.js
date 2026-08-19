@@ -207,6 +207,48 @@ async function renderAdminEmployees() {
   await render();
 }
 
+async function renderAdminSettings() {
+  const authorized = await api().GoogleAuthorized();
+  $view.innerHTML = `
+    <h2>설정 — Google 연동</h2>
+    <div class="card">
+      <h3>Google 계정 연동</h3>
+      <p style="margin:8px 0">상태:
+        <span class="status-badge">${authorized ? '연동됨' : '미연동'}</span></p>
+      <p style="margin:8px 0; color:#718096; font-size:13px">
+        Google Cloud Console에서 "데스크톱 앱" OAuth 클라이언트를 만들고,
+        내려받은 credentials.json 을 <b>%APPDATA%\\HOLMZ\\credentials.json</b> 에 두세요.</p>
+      <div class="row">
+        <button id="btn-auth" class="small primary">Google 계정 인증</button>
+      </div>
+      <div id="auth-result"></div>
+    </div>
+    <div class="card">
+      <h3>근로기록 동기화</h3>
+      <p style="margin:8px 0; color:#718096; font-size:13px">퇴근 완료된 미동기화 기록을 날짜별 스프레드시트로 업로드합니다. (마감 스케줄에서도 자동 실행)</p>
+      <button id="btn-sync" class="small primary" ${authorized ? '' : 'disabled'}>지금 동기화</button>
+      <div id="sync-result"></div>
+    </div>`;
+  document.getElementById('btn-auth').onclick = () => {
+    document.getElementById('auth-result').innerHTML = '<p style="margin-top:8px">브라우저에서 인증을 완료해주세요...</p>';
+    api().GoogleAuthorize().then(renderAdminSettings, err => {
+      document.getElementById('auth-result').innerHTML = '';
+      showError(err);
+    });
+  };
+  document.getElementById('btn-sync').onclick = () => {
+    document.getElementById('sync-result').innerHTML = '<p style="margin-top:8px">동기화 중...</p>';
+    api().SyncNow().then(res => {
+      document.getElementById('sync-result').innerHTML =
+        `<p style="margin-top:8px">✅ ${res.uploaded}건 업로드 완료</p>` +
+        (res.sheets || []).map(u => `<p style="font-size:12px"><a href="${u}" target="_blank">${u}</a></p>`).join('');
+    }, err => {
+      document.getElementById('sync-result').innerHTML = '';
+      showError(err);
+    });
+  };
+}
+
 const views = {
   'dashboard': renderDashboard,
   'worklog': renderWorklog,
@@ -215,6 +257,7 @@ const views = {
   'admin-worklog': renderAdminWorklog,
   'admin-checklist': renderAdminChecklist,
   'admin-employees': renderAdminEmployees,
+  'admin-settings': renderAdminSettings,
 };
 
 async function navigate(name) {
