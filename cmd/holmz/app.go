@@ -81,19 +81,52 @@ func (a *App) onSecondInstance(args []string) {
 
 // --- 직원 ---
 
+// sanitizeEmployee 는 PIN 해시를 지우고 표시용 HasPIN 만 남긴다.
+func sanitizeEmployee(e *domain.Employee) {
+	e.HasPIN = e.PIN != ""
+	e.PIN = ""
+}
+
 func (a *App) ListEmployees(activeOnly bool) ([]domain.Employee, error) {
-	return a.employees.List(activeOnly)
+	list, err := a.employees.List(activeOnly)
+	if err != nil {
+		return nil, err
+	}
+	for i := range list {
+		sanitizeEmployee(&list[i])
+	}
+	return list, nil
 }
 
 func (a *App) AddEmployee(name, pin string) (*domain.Employee, error) {
-	e := &domain.Employee{Name: name, PIN: pin, Active: true}
+	e := &domain.Employee{Name: name, Active: true}
 	if err := a.employees.Create(e); err != nil {
 		return nil, err
+	}
+	if pin != "" {
+		if err := a.auth.SetEmployeePIN(e.ID, pin); err != nil {
+			return nil, err
+		}
+		e.HasPIN = true
 	}
 	return e, nil
 }
 
-func (a *App) UpdateEmployee(e domain.Employee) error { return a.employees.Update(&e) }
+// UpdateEmployee 는 이름·활성 상태만 갱신한다. PIN 변경은 SetEmployeePIN 으로만 가능하다.
+func (a *App) UpdateEmployee(e domain.Employee) error {
+	stored, err := a.employees.Get(e.ID)
+	if err != nil {
+		return err
+	}
+	stored.Name = e.Name
+	stored.Active = e.Active
+	return a.employees.Update(stored)
+}
+
+// SetEmployeePIN 은 직원 PIN을 해시로 저장한다. 빈 값이면 해제.
+func (a *App) SetEmployeePIN(employeeID int64, pin string) error {
+	return a.auth.SetEmployeePIN(employeeID, pin)
+}
 
 // --- 근로기록 ---
 

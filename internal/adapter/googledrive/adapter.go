@@ -22,6 +22,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/sheets/v4"
 
+	"holmz/internal/adapter/secret"
 	"holmz/internal/domain"
 )
 
@@ -33,16 +34,20 @@ const (
 type Adapter struct {
 	configDir string
 	openURL   func(string) error
+	sealer    secret.Sealer
 
 	mu     sync.Mutex
 	config *oauth2.Config
 	token  *oauth2.Token
 }
 
-// New 는 설정 디렉터리의 credentials.json/token.json 을 로드해 어댑터를 만든다.
+// New 는 설정 디렉터리의 credentials.json 과 암호화 토큰(token.enc)을 로드해 어댑터를 만든다.
+// 토큰은 Windows DPAPI(비Windows는 AES-GCM)로 암호화 저장된다. 구버전 평문 token.json 이
+// 발견되면 암호화 파일로 이전하고 평문을 삭제한다.
 // openURL 은 인증 시 브라우저를 여는 함수다 (nil이면 Authorize에서 에러).
 func New(configDir string, openURL func(string) error) *Adapter {
 	a := &Adapter{configDir: configDir, openURL: openURL}
+	a.sealer, _ = secret.New(configDir)
 	a.config, _ = a.loadConfig()
 	a.token, _ = a.loadToken()
 	return a
@@ -57,7 +62,26 @@ func (a *Adapter) loadConfig() (*oauth2.Config, error) {
 }
 
 func (a *Adapter) loadToken() (*oauth2.Token, error) {
-	b, err := os.ReadFile(filepath.Join(a.configDir, "token.json"))
+	encPath := filepath.Join(a.configDir, "token.enc")
+	legacyPath := filepath.Join(a.configDir, "token.json")
+
+	if enc, err := os.ReadFile(encPath); err == nil {
+		if a.sealer == nil {
+			return nil, fmt.Errorf("암호화 모듈이 초기화되지 않았습니다")
+		}
+		b, err := a.sealer.Open(enc)
+		if err != nil {
+			return nil, fmt.Errorf("토큰 복호화 실패 (재인증 필요): %w", err)
+		}
+		tok := &oauth2.Token{}
+		if err := json.Unmarshal(b, tok); err != nil {
+			return nil, err
+		}
+		return tok, nil
+	}
+
+	// 구버전 평문 토큰 → 암호화 파일로 이전
+	b, err := os.ReadFile(legacyPath)
 	if err != nil {
 		return nil, err
 	}
@@ -65,15 +89,25 @@ func (a *Adapter) loadToken() (*oauth2.Token, error) {
 	if err := json.Unmarshal(b, tok); err != nil {
 		return nil, err
 	}
+	if err := a.saveToken(tok); err == nil {
+		_ = os.Remove(legacyPath)
+	}
 	return tok, nil
 }
 
 func (a *Adapter) saveToken(tok *oauth2.Token) error {
+	if a.sealer == nil {
+		return fmt.Errorf("암호화 모듈이 초기화되지 않았습니다")
+	}
 	b, err := json.Marshal(tok)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(a.configDir, "token.json"), b, 0o600)
+	enc, err := a.sealer.Seal(b)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(a.configDir, "token.enc"), enc, 0o600)
 }
 
 func (a *Adapter) Authorized() bool {

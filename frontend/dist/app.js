@@ -241,7 +241,7 @@ async function renderAdminEmployees() {
       <h2>직원 관리</h2>
       <div class="card">
         <table><tr><th>이름</th><th>PIN</th><th>상태</th><th></th></tr>
-        ${all.map(e => `<tr><td>${esc(e.name)}</td><td>${e.pin ? '설정됨' : '없음'}</td>
+        ${all.map(e => `<tr><td>${esc(e.name)}</td><td>${e.hasPin ? '설정됨' : '없음'}</td>
           <td>${e.active ? '재직' : '비활성'}</td>
           <td><button class="small" data-pin="${e.id}">PIN 변경</button>
               <button class="small" data-toggle="${e.id}">${e.active ? '비활성화' : '활성화'}</button></td></tr>`).join('')}</table>
@@ -266,9 +266,8 @@ async function renderAdminEmployees() {
       const e = all.find(x => x.id === Number(b.dataset.pin));
       const pin = prompt(`${e.name} 님의 새 PIN을 입력하세요. (비우면 PIN 해제)`);
       if (pin === null) return;
-      e.pin = pin;
       verifiedEmployees.delete(e.id);
-      api().UpdateEmployee(e).then(render, showError);
+      api().SetEmployeePIN(e.id, pin).then(render, showError);
     });
   };
   await render();
