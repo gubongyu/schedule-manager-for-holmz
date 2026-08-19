@@ -21,6 +21,20 @@ type WorkLogRepo interface {
 	MarkSynced(ids []int64) error
 }
 
+// ScheduleRepo 는 스케줄 저장소 Port다.
+type ScheduleRepo interface {
+	Create(s *ScheduleItem) error
+	Update(s *ScheduleItem) error
+	Delete(id int64) error
+	List() ([]ScheduleItem, error)
+}
+
+// TaskScheduler 는 OS 작업 스케줄러 연동 Port다.
+type TaskScheduler interface {
+	Register(s ScheduleItem) error
+	Unregister(taskName string) error
+}
+
 // DrivePort 는 Google Drive/Sheets 연동 Port다.
 type DrivePort interface {
 	Authorized() bool

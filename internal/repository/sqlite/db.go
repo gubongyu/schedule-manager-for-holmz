@@ -49,6 +49,14 @@ CREATE TABLE IF NOT EXISTS checklist_entries (
 	photo_path TEXT NOT NULL DEFAULT '',
 	UNIQUE(date, template_id)
 );
+CREATE TABLE IF NOT EXISTS schedules (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	task_name TEXT NOT NULL,
+	run_time TEXT NOT NULL,
+	repeat_days TEXT NOT NULL DEFAULT '',
+	action_type TEXT NOT NULL,
+	active INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS checklist_completions (
 	date TEXT NOT NULL,
 	type TEXT NOT NULL,
