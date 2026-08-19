@@ -35,6 +35,14 @@ type TaskScheduler interface {
 	Unregister(taskName string) error
 }
 
+// PlaylistRepo 는 재생목록 저장소 Port다.
+type PlaylistRepo interface {
+	Create(p *PlaylistItem) error
+	Update(p *PlaylistItem) error
+	Delete(id int64) error
+	List(activeOnly bool) ([]PlaylistItem, error)
+}
+
 // DrivePort 는 Google Drive/Sheets 연동 Port다.
 type DrivePort interface {
 	Authorized() bool
