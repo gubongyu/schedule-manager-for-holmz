@@ -41,14 +41,16 @@ async function renderDashboard() {
       ? `<p><b>${esc(emp.name)}</b> 근무 중 — 출근 ${fmtTime(cur.clockIn)}</p>`
       : `<p><b>${esc(emp.name)}</b> 근무 전 (출근 기록 없음)</p>`;
   }
-  const [open, close] = await Promise.all([api().TodayChecklist('open'), api().TodayChecklist('close')]);
+  const [open, close, playing] = await Promise.all([
+    api().TodayChecklist('open'), api().TodayChecklist('close'), api().PlayerStatus()]);
   const clStatus = (v, label) => v.completed
     ? `<p>${label}: ✅ 완료 (${fmtTime(v.completedAt)}, ${esc(v.completedBy)})</p>`
     : `<p>${label}: ⬜ 미완료 (${v.entries.filter(e => e.checked).length}/${v.entries.length} 항목)</p>`;
   $view.innerHTML = `
     <h2>대시보드</h2>
     <div class="card"><h3>오늘 근무</h3>${shiftHtml}</div>
-    <div class="card"><h3>오픈/마감 상태</h3>${clStatus(open, '오픈')}${clStatus(close, '마감')}</div>`;
+    <div class="card"><h3>오픈/마감 상태</h3>${clStatus(open, '오픈')}${clStatus(close, '마감')}</div>
+    <div class="card"><h3>영상 재생</h3><p>${playing ? '▶️ 재생 중' : '⏹ 정지됨'}</p></div>`;
 }
 
 async function renderWorklog() {
@@ -269,6 +271,123 @@ async function renderAdminSchedule() {
   await render();
 }
 
+// --- 영상 재생 (YouTube IFrame Player + 워치독 연동) ---
+let ytPlayer = null, ytApiPromise = null, playerPlaylist = [], playerIdx = 0, hbTimer = null, playerFatalMsg = '';
+
+function loadYTApi() {
+  if (window.YT && window.YT.Player) return Promise.resolve();
+  if (!ytApiPromise) {
+    ytApiPromise = new Promise(resolve => {
+      window.onYouTubeIframeAPIReady = resolve;
+      const s = document.createElement('script');
+      s.src = 'https://www.youtube.com/iframe_api';
+      document.head.appendChild(s);
+    });
+  }
+  return ytApiPromise;
+}
+
+function destroyLocalPlayer() {
+  clearInterval(hbTimer);
+  hbTimer = null;
+  if (ytPlayer) { try { ytPlayer.destroy(); } catch (e) { } ytPlayer = null; }
+  const wrap = document.getElementById('player-wrap');
+  if (wrap) wrap.innerHTML = '<div id="yt-player"></div>';
+}
+
+function playNext() {
+  if (!ytPlayer || !playerPlaylist.length) return;
+  playerIdx = (playerIdx + 1) % playerPlaylist.length;
+  ytPlayer.loadVideoById(playerPlaylist[playerIdx].videoId);
+}
+
+function reloadCurrentVideo() {
+  if (ytPlayer && playerPlaylist.length) {
+    ytPlayer.loadVideoById(playerPlaylist[playerIdx].videoId);
+  } else if (currentView === 'admin-player') {
+    beginPlayback();
+  }
+}
+
+async function beginPlayback() {
+  playerPlaylist = (await api().ActivePlaylist()) || [];
+  if (!playerPlaylist.length) {
+    alert('재생목록이 비어 있습니다. 영상을 먼저 등록하세요.');
+    await api().StopPlayback();
+    return;
+  }
+  await loadYTApi();
+  if (!document.getElementById('yt-player')) return; // 재생 화면이 아니면 보류
+  destroyLocalPlayer();
+  playerIdx = 0;
+  playerFatalMsg = '';
+  ytPlayer = new YT.Player('yt-player', {
+    videoId: playerPlaylist[0].videoId,
+    playerVars: { autoplay: 1, controls: 1, rel: 0 },
+    events: {
+      onReady: e => e.target.playVideo(),
+      onStateChange: e => {
+        if (e.data === YT.PlayerState.ENDED) playNext();
+        else if (e.data === YT.PlayerState.PLAYING) api().PlayerHeartbeat('playing');
+      },
+      onError: () => api().PlayerHeartbeat('error'),
+    },
+  });
+  hbTimer = setInterval(() => {
+    if (ytPlayer && ytPlayer.getPlayerState && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING) {
+      api().PlayerHeartbeat('playing');
+    }
+  }, 10000);
+}
+
+async function renderAdminPlayer() {
+  const [items, playing] = await Promise.all([api().PlaylistItems(), api().PlayerStatus()]);
+  $view.innerHTML = `
+    <h2>영상 재생</h2>
+    ${playerFatalMsg ? `<div class="fatal-banner">⚠️ ${esc(playerFatalMsg)}</div>` : ''}
+    <div class="card">
+      <div class="row">
+        <button id="pl-start" class="big-btn in" ${playing ? 'disabled' : ''}>재생 시작</button>
+        <button id="pl-stop" class="big-btn out" ${playing ? '' : 'disabled'}>재생 종료</button>
+        <button id="pl-full" class="small">전체화면</button>
+        <button id="pl-mute" class="small">음소거 전환</button>
+        <label>음량 <input type="range" id="pl-vol" min="0" max="100" value="60"></label>
+      </div>
+      <div id="player-wrap"><div id="yt-player"></div></div>
+      <p style="margin-top:8px; color:#718096; font-size:12px">
+        재생 중에는 이 화면을 유지하세요. 오류·끊김은 워치독이 자동으로 재시작합니다.
+        스케줄 자동 재생 시 이 화면으로 자동 전환됩니다.</p>
+    </div>
+    <div class="card">
+      <h3>재생목록</h3>
+      <table><tr><th>순서</th><th>제목</th><th>영상 ID</th><th></th></tr>
+      ${(items || []).map(p => `<tr><td>${p.sortOrder}</td><td>${esc(p.title)}</td>
+        <td>${esc(p.videoId)}</td><td><button class="small" data-del="${p.id}">삭제</button></td></tr>`).join('')}</table>
+      <div class="row" style="margin-top:10px">
+        <input type="text" id="pl-url" placeholder="YouTube 영상 URL" style="flex:1">
+        <input type="text" id="pl-title" placeholder="제목(선택)">
+        <button id="pl-add" class="small primary">추가</button>
+      </div>
+    </div>`;
+  document.getElementById('pl-start').onclick = () => api().StartPlayback();
+  document.getElementById('pl-stop').onclick = () => api().StopPlayback();
+  document.getElementById('pl-full').onclick = () => document.getElementById('player-wrap').requestFullscreen();
+  document.getElementById('pl-mute').onclick = () => {
+    if (ytPlayer) ytPlayer.isMuted() ? ytPlayer.unMute() : ytPlayer.mute();
+  };
+  document.getElementById('pl-vol').oninput = e => { if (ytPlayer) ytPlayer.setVolume(Number(e.target.value)); };
+  document.getElementById('pl-add').onclick = () => {
+    const url = document.getElementById('pl-url').value.trim();
+    if (!url) return;
+    api().AddPlaylistItem(url, document.getElementById('pl-title').value.trim())
+      .then(renderAdminPlayer, showError);
+  };
+  $view.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+    if (confirm('재생목록에서 삭제할까요?')) api().RemovePlaylistItem(Number(b.dataset.del)).then(renderAdminPlayer, showError);
+  });
+  if (playing && !ytPlayer) await beginPlayback();
+}
+
 async function renderAdminSettings() {
   const authorized = await api().GoogleAuthorized();
   $view.innerHTML = `
@@ -319,6 +438,7 @@ const views = {
   'admin-worklog': renderAdminWorklog,
   'admin-checklist': renderAdminChecklist,
   'admin-schedule': renderAdminSchedule,
+  'admin-player': renderAdminPlayer,
   'admin-employees': renderAdminEmployees,
   'admin-settings': renderAdminSettings,
 };
@@ -330,6 +450,11 @@ function handleScheduleAction(action) {
 }
 
 async function navigate(name) {
+  if (currentView === 'admin-player' && name !== 'admin-player' && ytPlayer) {
+    if (!confirm('영상 재생 중입니다. 화면을 이동하면 재생이 중지됩니다. 이동할까요?')) return;
+    await api().StopPlayback();
+    destroyLocalPlayer();
+  }
   currentView = name;
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   try {
@@ -346,7 +471,23 @@ document.getElementById('today').textContent = new Date().toLocaleDateString('ko
 
 (async function init() {
   await refreshEmployees();
-  if (window.runtime) window.runtime.EventsOn('schedule:action', handleScheduleAction);
+  if (window.runtime) {
+    window.runtime.EventsOn('schedule:action', handleScheduleAction);
+    window.runtime.EventsOn('player:start', async () => {
+      if (currentView !== 'admin-player') await navigate('admin-player');
+      await beginPlayback();
+    });
+    window.runtime.EventsOn('player:stop', () => {
+      destroyLocalPlayer();
+      if (currentView === 'admin-player') renderAdminPlayer();
+    });
+    window.runtime.EventsOn('player:reload', reloadCurrentVideo);
+    window.runtime.EventsOn('player:fatal', msg => {
+      playerFatalMsg = msg || '영상 재생을 복구하지 못했습니다.';
+      destroyLocalPlayer();
+      if (currentView === 'admin-player') renderAdminPlayer();
+    });
+  }
   const startupAction = await api().GetStartupAction();
   await navigate('dashboard');
   if (startupAction) handleScheduleAction(startupAction);

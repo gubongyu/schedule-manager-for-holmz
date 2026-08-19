@@ -20,18 +20,21 @@ type App struct {
 	sync      *service.SyncService
 	drive     domain.DrivePort
 	schedule  *service.ScheduleService
+	player    *service.PlayerService
 
 	startupAction string // --action 플래그로 전달된 자동화 동작
 }
 
 func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, checklist *service.ChecklistService,
-	sync *service.SyncService, drive domain.DrivePort, schedule *service.ScheduleService, startupAction string) *App {
+	sync *service.SyncService, drive domain.DrivePort, schedule *service.ScheduleService,
+	player *service.PlayerService, startupAction string) *App {
 	return &App{employees: employees, worklog: worklog, checklist: checklist,
-		sync: sync, drive: drive, schedule: schedule, startupAction: startupAction}
+		sync: sync, drive: drive, schedule: schedule, player: player, startupAction: startupAction}
 }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	go a.player.RunWatchdog(ctx)
 	if a.startupAction != "" {
 		a.HandleAction(a.startupAction)
 	}
@@ -46,6 +49,10 @@ func (a *App) HandleAction(action string) {
 				log.Printf("자동 업로드 실패: %v", err)
 			}
 		}()
+	case domain.ActionPlayStart:
+		a.player.Start()
+	case domain.ActionPlayStop:
+		a.player.Stop()
 	}
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "schedule:action", action)
@@ -122,6 +129,21 @@ func (a *App) DeleteSchedule(id int64) error              { return a.schedule.De
 func (a *App) ApplyScheduleTemplate(openTime, closeTime string) error {
 	return a.schedule.ApplyTemplate(openTime, closeTime)
 }
+
+// --- 영상 재생 ---
+
+func (a *App) PlaylistItems() ([]domain.PlaylistItem, error) { return a.player.List() }
+func (a *App) ActivePlaylist() ([]domain.PlaylistItem, error) {
+	return a.player.ActiveList()
+}
+func (a *App) AddPlaylistItem(url, title string) (*domain.PlaylistItem, error) {
+	return a.player.AddVideo(url, title)
+}
+func (a *App) RemovePlaylistItem(id int64) error { return a.player.Remove(id) }
+func (a *App) StartPlayback()                    { a.player.Start() }
+func (a *App) StopPlayback()                     { a.player.Stop() }
+func (a *App) PlayerHeartbeat(state string)      { a.player.Heartbeat(state) }
+func (a *App) PlayerStatus() bool                { return a.player.IsPlaying() }
 
 // --- Google Drive 동기화 ---
 

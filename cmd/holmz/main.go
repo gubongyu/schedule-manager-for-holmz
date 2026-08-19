@@ -10,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"holmz/frontend"
 	"holmz/internal/adapter/googledrive"
@@ -50,13 +51,22 @@ func main() {
 		exePath = os.Args[0]
 	}
 
-	app := NewApp(
+	var app *App
+	// 이벤트는 Wails 컨텍스트 준비 후에만 발행한다 (startup 이전 호출 가드).
+	emit := func(event string, data ...any) {
+		if app != nil && app.ctx != nil {
+			runtime.EventsEmit(app.ctx, event, data...)
+		}
+	}
+
+	app = NewApp(
 		sqlite.NewEmployeeRepo(db),
 		service.NewWorkLogService(worklogRepo, nil),
 		service.NewChecklistService(checklistRepo, nil),
 		service.NewSyncService(worklogRepo, checklistRepo, drive),
 		drive,
 		service.NewScheduleService(sqlite.NewScheduleRepo(db), scheduler.New(exePath, nil)),
+		service.NewPlayerService(sqlite.NewPlaylistRepo(db), emit, nil),
 		*action,
 	)
 
