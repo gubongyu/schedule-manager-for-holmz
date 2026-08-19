@@ -75,6 +75,11 @@ func (s *ChecklistService) Complete(typ, by string) error {
 	})
 }
 
+// AttachPhoto 는 항목의 첨부 사진 경로를 저장한다. 빈 경로면 첨부 해제.
+func (s *ChecklistService) AttachPhoto(entryID int64, path string) error {
+	return s.repo.SetPhoto(entryID, path)
+}
+
 // --- 관리자용 템플릿 관리 ---
 
 func (s *ChecklistService) AddTemplate(typ, name string, sortOrder int, required bool) (*domain.ChecklistTemplate, error) {
