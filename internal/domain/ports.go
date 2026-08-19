@@ -16,6 +16,17 @@ type WorkLogRepo interface {
 	GetOpen(employeeID int64) (*WorkLog, error)
 	// List 는 기간(YYYY-MM-DD, 양끝 포함)·직원 필터로 조회한다. employeeID 0이면 전체.
 	List(from, to string, employeeID int64) ([]WorkLog, error)
+	// ListPending 은 퇴근 완료됐지만 Drive 미동기화된 기록을 반환한다.
+	ListPending() ([]WorkLog, error)
+	MarkSynced(ids []int64) error
+}
+
+// DrivePort 는 Google Drive/Sheets 연동 Port다.
+type DrivePort interface {
+	Authorized() bool
+	Authorize() error
+	// UploadDay 는 하루치 근로기록·체크리스트를 스프레드시트로 업로드하고 URL을 반환한다.
+	UploadDay(date string, logs []WorkLog, entries []ChecklistEntry) (string, error)
 }
 
 // ChecklistRepo 는 체크리스트 저장소 Port다.

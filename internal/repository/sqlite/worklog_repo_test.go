@@ -42,6 +42,41 @@ func TestWorkLogRepoOpenAndClose(t *testing.T) {
 	}
 }
 
+func TestWorkLogRepoPendingSync(t *testing.T) {
+	db := openTestDB(t)
+	repo := NewWorkLogRepo(db)
+	emp := seedEmployee(t, db, "A")
+
+	closed := func(date string) *domain.WorkLog {
+		return &domain.WorkLog{EmployeeID: emp.ID, Date: date, ClockIn: date + "T09:00:00+09:00",
+			ClockOut: date + "T18:00:00+09:00", SyncStatus: "pending"}
+	}
+	w1, w2 := closed("2026-08-17"), closed("2026-08-18")
+	working := &domain.WorkLog{EmployeeID: emp.ID, Date: "2026-08-19", ClockIn: "2026-08-19T09:00:00+09:00", SyncStatus: "pending"}
+	for _, w := range []*domain.WorkLog{w1, w2, working} {
+		if err := repo.Create(w); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	pending, err := repo.ListPending()
+	if err != nil || len(pending) != 2 {
+		t.Fatalf("ListPending = %d (err=%v), want 2 (working shift excluded)", len(pending), err)
+	}
+
+	if err := repo.MarkSynced([]int64{w1.ID, w2.ID}); err != nil {
+		t.Fatalf("MarkSynced: %v", err)
+	}
+	pending, _ = repo.ListPending()
+	if len(pending) != 0 {
+		t.Fatalf("ListPending after MarkSynced = %d, want 0", len(pending))
+	}
+	logs, _ := repo.List("2026-08-17", "2026-08-17", 0)
+	if logs[0].SyncStatus != "synced" {
+		t.Errorf("SyncStatus = %q, want synced", logs[0].SyncStatus)
+	}
+}
+
 func TestWorkLogRepoList(t *testing.T) {
 	db := openTestDB(t)
 	repo := NewWorkLogRepo(db)
