@@ -2,6 +2,10 @@ package main
 
 import (
 	"context"
+	"log"
+	"strings"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"holmz/internal/domain"
 	"holmz/internal/service"
@@ -15,14 +19,48 @@ type App struct {
 	checklist *service.ChecklistService
 	sync      *service.SyncService
 	drive     domain.DrivePort
+	schedule  *service.ScheduleService
+
+	startupAction string // --action 플래그로 전달된 자동화 동작
 }
 
 func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, checklist *service.ChecklistService,
-	sync *service.SyncService, drive domain.DrivePort) *App {
-	return &App{employees: employees, worklog: worklog, checklist: checklist, sync: sync, drive: drive}
+	sync *service.SyncService, drive domain.DrivePort, schedule *service.ScheduleService, startupAction string) *App {
+	return &App{employees: employees, worklog: worklog, checklist: checklist,
+		sync: sync, drive: drive, schedule: schedule, startupAction: startupAction}
 }
 
-func (a *App) startup(ctx context.Context) { a.ctx = ctx }
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	if a.startupAction != "" {
+		a.HandleAction(a.startupAction)
+	}
+}
+
+// HandleAction 은 스케줄 트리거(--action=...)를 처리한다. 두 번째 인스턴스 실행 시에도 호출된다.
+func (a *App) HandleAction(action string) {
+	switch action {
+	case domain.ActionUpload:
+		go func() {
+			if _, err := a.sync.SyncPending(); err != nil {
+				log.Printf("자동 업로드 실패: %v", err)
+			}
+		}()
+	}
+	if a.ctx != nil {
+		runtime.EventsEmit(a.ctx, "schedule:action", action)
+		runtime.WindowShow(a.ctx)
+	}
+}
+
+// onSecondInstance 는 스케줄러가 앱을 다시 실행했을 때 인자에서 동작을 꺼내 처리한다.
+func (a *App) onSecondInstance(args []string) {
+	for _, arg := range args {
+		if v, ok := strings.CutPrefix(arg, "--action="); ok {
+			a.HandleAction(v)
+		}
+	}
+}
 
 // --- 직원 ---
 
@@ -69,6 +107,21 @@ func (a *App) UpdateChecklistTemplate(t domain.ChecklistTemplate) error {
 	return a.checklist.UpdateTemplate(&t)
 }
 func (a *App) RemoveChecklistTemplate(id int64) error { return a.checklist.RemoveTemplate(id) }
+
+// --- 스케줄 ---
+
+func (a *App) GetStartupAction() string { return a.startupAction }
+func (a *App) ListSchedules() ([]domain.ScheduleItem, error) {
+	return a.schedule.List()
+}
+func (a *App) AddSchedule(taskName, runTime string, repeatDays []string, actionType string) (*domain.ScheduleItem, error) {
+	return a.schedule.Add(taskName, runTime, repeatDays, actionType, true)
+}
+func (a *App) ToggleSchedule(id int64, active bool) error { return a.schedule.Toggle(id, active) }
+func (a *App) DeleteSchedule(id int64) error              { return a.schedule.Delete(id) }
+func (a *App) ApplyScheduleTemplate(openTime, closeTime string) error {
+	return a.schedule.ApplyTemplate(openTime, closeTime)
+}
 
 // --- Google Drive 동기화 ---
 

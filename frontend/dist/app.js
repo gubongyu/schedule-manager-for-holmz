@@ -207,6 +207,68 @@ async function renderAdminEmployees() {
   await render();
 }
 
+const ACTION_LABELS = {
+  'notify-open': '오픈 체크리스트 알림',
+  'notify-close': '마감 체크리스트 알림',
+  'upload': '근로기록 업로드',
+  'play-start': '영상 재생 시작',
+  'play-stop': '영상 재생 종료',
+};
+const DAY_LABELS = { MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금', SAT: '토', SUN: '일' };
+
+async function renderAdminSchedule() {
+  const render = async () => {
+    const list = (await api().ListSchedules()) || [];
+    $view.innerHTML = `
+      <h2>스케줄 관리</h2>
+      <div class="card">
+        <h3>자동화 템플릿</h3>
+        <p style="margin:8px 0; color:#718096; font-size:13px">
+          오픈 시각: 체크리스트 알림 + 영상 재생 시작 / 마감 시각: 체크리스트 알림 + 근로기록 업로드 + 영상 재생 종료</p>
+        <div class="row">
+          <label>오픈 <input type="text" id="tpl-open" value="09:00" style="width:80px"></label>
+          <label>마감 <input type="text" id="tpl-close" value="22:00" style="width:80px"></label>
+          <button id="tpl-apply" class="small primary">템플릿 적용</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>등록된 스케줄</h3>
+        <table><tr><th>작업명</th><th>시각</th><th>요일</th><th>동작</th><th>활성</th><th></th></tr>
+        ${list.map(s => `<tr>
+          <td>${esc(s.taskName)}</td><td>${s.runTime}</td>
+          <td>${(s.repeatDays && s.repeatDays.length) ? s.repeatDays.map(d => DAY_LABELS[d] || d).join(',') : '매일'}</td>
+          <td>${ACTION_LABELS[s.actionType] || s.actionType}</td>
+          <td><input type="checkbox" data-toggle="${s.id}" ${s.active ? 'checked' : ''}></td>
+          <td><button class="small" data-del="${s.id}">삭제</button></td></tr>`).join('')}</table>
+        <div class="row" style="margin-top:10px">
+          <input type="text" id="sc-name" placeholder="작업명">
+          <input type="text" id="sc-time" placeholder="HH:MM" style="width:80px">
+          <select id="sc-action">${Object.entries(ACTION_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select>
+          <span id="sc-days">${Object.entries(DAY_LABELS).map(([v, l]) =>
+            `<label style="margin-right:4px"><input type="checkbox" value="${v}">${l}</label>`).join('')}</span>
+          <button id="sc-add" class="small primary">추가</button>
+        </div>
+        <p style="margin-top:8px; color:#718096; font-size:12px">요일 미선택 시 매일 실행. Windows 작업 스케줄러 등록에는 관리자 권한이 필요할 수 있습니다.</p>
+      </div>`;
+    document.getElementById('tpl-apply').onclick = () =>
+      api().ApplyScheduleTemplate(document.getElementById('tpl-open').value, document.getElementById('tpl-close').value)
+        .then(render, showError);
+    document.getElementById('sc-add').onclick = () => {
+      const name = document.getElementById('sc-name').value.trim();
+      const time = document.getElementById('sc-time').value.trim();
+      if (!name || !/^\d{2}:\d{2}$/.test(time)) { alert('작업명과 시각(HH:MM)을 입력하세요.'); return; }
+      const days = [...document.querySelectorAll('#sc-days input:checked')].map(c => c.value);
+      api().AddSchedule(name, time, days, document.getElementById('sc-action').value).then(render, showError);
+    };
+    $view.querySelectorAll('[data-toggle]').forEach(cb => cb.onchange = () =>
+      api().ToggleSchedule(Number(cb.dataset.toggle), cb.checked).then(render, showError));
+    $view.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+      if (confirm('이 스케줄을 삭제할까요?')) api().DeleteSchedule(Number(b.dataset.del)).then(render, showError);
+    });
+  };
+  await render();
+}
+
 async function renderAdminSettings() {
   const authorized = await api().GoogleAuthorized();
   $view.innerHTML = `
@@ -256,9 +318,16 @@ const views = {
   'checklist-close': () => renderChecklist('close'),
   'admin-worklog': renderAdminWorklog,
   'admin-checklist': renderAdminChecklist,
+  'admin-schedule': renderAdminSchedule,
   'admin-employees': renderAdminEmployees,
   'admin-settings': renderAdminSettings,
 };
+
+// 스케줄 트리거(--action) 처리: 알림 동작은 해당 체크리스트 화면으로 이동한다.
+function handleScheduleAction(action) {
+  if (action === 'notify-open') navigate('checklist-open');
+  else if (action === 'notify-close') navigate('checklist-close');
+}
 
 async function navigate(name) {
   currentView = name;
@@ -277,5 +346,8 @@ document.getElementById('today').textContent = new Date().toLocaleDateString('ko
 
 (async function init() {
   await refreshEmployees();
+  if (window.runtime) window.runtime.EventsOn('schedule:action', handleScheduleAction);
+  const startupAction = await api().GetStartupAction();
   await navigate('dashboard');
+  if (startupAction) handleScheduleAction(startupAction);
 })();
