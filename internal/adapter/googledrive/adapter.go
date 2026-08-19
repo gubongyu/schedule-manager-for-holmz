@@ -218,13 +218,13 @@ func (a *Adapter) UploadDay(date string, logs []domain.WorkLog, entries []domain
 		}}},
 	}).Do()
 
-	clRows := [][]any{{"구분", "항목", "필수", "완료", "완료시각", "작성자"}}
+	clRows := [][]any{{"구분", "항목", "필수", "완료", "완료시각", "작성자", "첨부사진"}}
 	for _, e := range entries {
 		typ := "오픈"
 		if e.Type == "close" {
 			typ = "마감"
 		}
-		clRows = append(clRows, []any{typ, e.Name, e.Required, e.Checked, e.CheckedAt, e.CheckedBy})
+		clRows = append(clRows, []any{typ, e.Name, e.Required, e.Checked, e.CheckedAt, e.CheckedBy, e.PhotoPath})
 	}
 	if _, err := s.Spreadsheets.Values.Update(ssID, "'체크리스트'!A1", &sheets.ValueRange{Values: clRows}).
 		ValueInputOption("RAW").Do(); err != nil {

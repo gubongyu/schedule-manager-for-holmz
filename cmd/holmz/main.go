@@ -42,6 +42,7 @@ func main() {
 	}
 	defer db.Close()
 
+	employeeRepo := sqlite.NewEmployeeRepo(db)
 	worklogRepo := sqlite.NewWorkLogRepo(db)
 	checklistRepo := sqlite.NewChecklistRepo(db)
 	drive := googledrive.New(cfgDir, browser.OpenURL)
@@ -60,13 +61,15 @@ func main() {
 	}
 
 	app = NewApp(
-		sqlite.NewEmployeeRepo(db),
+		employeeRepo,
 		service.NewWorkLogService(worklogRepo, nil),
 		service.NewChecklistService(checklistRepo, nil),
 		service.NewSyncService(worklogRepo, checklistRepo, drive),
 		drive,
 		service.NewScheduleService(sqlite.NewScheduleRepo(db), scheduler.New(exePath, nil)),
 		service.NewPlayerService(sqlite.NewPlaylistRepo(db), emit, nil),
+		service.NewAuthService(employeeRepo, sqlite.NewSettingsRepo(db)),
+		filepath.Join(cfgDir, "photos"),
 		*action,
 	)
 

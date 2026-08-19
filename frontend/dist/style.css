@@ -27,6 +27,8 @@ th { background: #eef2f8; }
 .check-item input[type=checkbox] { width: 24px; height: 24px; }
 .check-item .req { color: #c53030; font-size: 12px; font-weight: 700; }
 .check-item .meta { margin-left: auto; color: #718096; font-size: 12px; }
+.photo-box { margin: -4px 0 10px 36px; }
+.photo-box img { max-width: 320px; max-height: 240px; border-radius: 8px; border: 1px solid #e2e8f0; }
 .done-banner { background: #c6f6d5; border: 1px solid #2f855a; color: #22543d; padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; }
 .status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: #fefcbf; color: #744210; }
 .error { color: #c53030; margin-top: 8px; }

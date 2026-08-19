@@ -2,7 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -21,15 +27,18 @@ type App struct {
 	drive     domain.DrivePort
 	schedule  *service.ScheduleService
 	player    *service.PlayerService
+	auth      *service.AuthService
 
+	photosDir     string
 	startupAction string // --action 플래그로 전달된 자동화 동작
 }
 
 func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, checklist *service.ChecklistService,
 	sync *service.SyncService, drive domain.DrivePort, schedule *service.ScheduleService,
-	player *service.PlayerService, startupAction string) *App {
+	player *service.PlayerService, auth *service.AuthService, photosDir, startupAction string) *App {
 	return &App{employees: employees, worklog: worklog, checklist: checklist,
-		sync: sync, drive: drive, schedule: schedule, player: player, startupAction: startupAction}
+		sync: sync, drive: drive, schedule: schedule, player: player, auth: auth,
+		photosDir: photosDir, startupAction: startupAction}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -114,6 +123,105 @@ func (a *App) UpdateChecklistTemplate(t domain.ChecklistTemplate) error {
 	return a.checklist.UpdateTemplate(&t)
 }
 func (a *App) RemoveChecklistTemplate(id int64) error { return a.checklist.RemoveTemplate(id) }
+
+// --- 체크리스트 사진 첨부 ---
+
+var photoMimes = map[string]string{".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+
+// AttachChecklistPhoto 는 파일 대화상자로 이미지를 골라 앱 사진 폴더에 복사하고 항목에 연결한다.
+// 취소하면 빈 문자열을 반환한다.
+func (a *App) AttachChecklistPhoto(entryID int64) (string, error) {
+	sel, err := runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "사진 선택",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "이미지 (*.png;*.jpg;*.jpeg;*.webp)", Pattern: "*.png;*.jpg;*.jpeg;*.webp"},
+		},
+	})
+	if err != nil || sel == "" {
+		return "", err
+	}
+	ext := strings.ToLower(filepath.Ext(sel))
+	if _, ok := photoMimes[ext]; !ok {
+		return "", fmt.Errorf("지원하지 않는 이미지 형식입니다: %s", ext)
+	}
+	if err := os.MkdirAll(a.photosDir, 0o755); err != nil {
+		return "", err
+	}
+	dest := filepath.Join(a.photosDir, fmt.Sprintf("entry_%d%s", entryID, ext))
+	src, err := os.Open(sel)
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+	dst, err := os.Create(dest)
+	if err != nil {
+		return "", err
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		dst.Close()
+		return "", err
+	}
+	if err := dst.Close(); err != nil {
+		return "", err
+	}
+	if err := a.checklist.AttachPhoto(entryID, dest); err != nil {
+		return "", err
+	}
+	return dest, nil
+}
+
+// RemoveChecklistPhoto 는 첨부를 해제하고 복사본 파일을 삭제한다.
+func (a *App) RemoveChecklistPhoto(entryID int64, path string) error {
+	if err := a.checklist.AttachPhoto(entryID, ""); err != nil {
+		return err
+	}
+	if path != "" && filepath.Dir(filepath.Clean(path)) == filepath.Clean(a.photosDir) {
+		_ = os.Remove(path)
+	}
+	return nil
+}
+
+// PhotoDataURL 은 앱 사진 폴더 내 이미지를 data URL로 반환한다 (WebView 표시용).
+func (a *App) PhotoDataURL(path string) (string, error) {
+	clean := filepath.Clean(path)
+	if filepath.Dir(clean) != filepath.Clean(a.photosDir) {
+		return "", errors.New("사진 폴더 밖의 파일은 열 수 없습니다")
+	}
+	mime, ok := photoMimes[strings.ToLower(filepath.Ext(clean))]
+	if !ok {
+		return "", errors.New("지원하지 않는 이미지 형식입니다")
+	}
+	b, err := os.ReadFile(clean)
+	if err != nil {
+		return "", err
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(b), nil
+}
+
+// --- PIN 인증 ---
+
+func (a *App) EmployeeNeedsPIN(employeeID int64) (bool, error) {
+	return a.auth.EmployeeNeedsPIN(employeeID)
+}
+func (a *App) VerifyEmployeePIN(employeeID int64, pin string) (bool, error) {
+	return a.auth.VerifyEmployeePIN(employeeID, pin)
+}
+func (a *App) HasAdminPIN() (bool, error) { return a.auth.HasAdminPIN() }
+func (a *App) VerifyAdminPIN(pin string) (bool, error) {
+	return a.auth.VerifyAdminPIN(pin)
+}
+
+// SetAdminPIN 은 현재 PIN 확인 후 새 PIN을 저장한다. 빈 값이면 잠금 해제.
+func (a *App) SetAdminPIN(currentPIN, newPIN string) error {
+	ok, err := a.auth.VerifyAdminPIN(currentPIN)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("현재 관리자 PIN이 일치하지 않습니다")
+	}
+	return a.auth.SetAdminPIN(newPIN)
+}
 
 // --- 스케줄 ---
 

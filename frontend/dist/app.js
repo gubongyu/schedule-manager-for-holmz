@@ -23,6 +23,33 @@ async function refreshEmployees() {
   if (prev && employees.some(e => String(e.id) === prev)) sel.value = prev;
 }
 
+// --- PIN 인증 ---
+// 세션 동안 검증된 근무자·관리자 상태를 기억한다.
+const verifiedEmployees = new Set();
+let adminVerified = false;
+
+async function ensureEmployeeVerified() {
+  const emp = selectedEmployee();
+  if (!emp) { alert('근무자를 선택하세요.'); return null; }
+  if (verifiedEmployees.has(emp.id)) return emp;
+  if (!(await api().EmployeeNeedsPIN(emp.id))) { verifiedEmployees.add(emp.id); return emp; }
+  const pin = prompt(`${emp.name} 님의 PIN을 입력하세요.`);
+  if (pin === null) return null;
+  if (!(await api().VerifyEmployeePIN(emp.id, pin))) { alert('PIN이 일치하지 않습니다.'); return null; }
+  verifiedEmployees.add(emp.id);
+  return emp;
+}
+
+async function ensureAdminVerified() {
+  if (adminVerified) return true;
+  if (!(await api().HasAdminPIN())) { adminVerified = true; return true; }
+  const pin = prompt('관리자 PIN을 입력하세요.');
+  if (pin === null) return false;
+  if (!(await api().VerifyAdminPIN(pin))) { alert('PIN이 일치하지 않습니다.'); return false; }
+  adminVerified = true;
+  return true;
+}
+
 function showError(err) {
   const el = document.createElement('p');
   el.className = 'error';
@@ -74,11 +101,15 @@ async function renderWorklog() {
     </div>
     <div class="card"><h3>내 근로 이력 (최근 30일)</h3><div id="my-history"></div></div>`;
 
-  document.getElementById('btn-in').onclick = () => api().ClockIn(emp.id).then(renderWorklog, showError);
-  document.getElementById('btn-out').onclick = () => api().ClockOut(emp.id).then(renderWorklog, showError);
-  document.getElementById('btn-note').onclick = () => {
+  document.getElementById('btn-in').onclick = async () => {
+    if (await ensureEmployeeVerified()) api().ClockIn(emp.id).then(renderWorklog, showError);
+  };
+  document.getElementById('btn-out').onclick = async () => {
+    if (await ensureEmployeeVerified()) api().ClockOut(emp.id).then(renderWorklog, showError);
+  };
+  document.getElementById('btn-note').onclick = async () => {
     const v = document.getElementById('note-input').value.trim();
-    if (v) api().AddNote(emp.id, v).then(renderWorklog, showError);
+    if (v && await ensureEmployeeVerified()) api().AddNote(emp.id, v).then(renderWorklog, showError);
   };
 
   const from = new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10);
@@ -96,7 +127,6 @@ function historyTable(logs) {
 
 async function renderChecklist(type) {
   const label = type === 'open' ? '오픈' : '마감';
-  const emp = selectedEmployee();
   const view = await api().TodayChecklist(type);
   $view.innerHTML = `
     <h2>${label} 체크리스트 — ${view.date}</h2>
@@ -105,22 +135,47 @@ async function renderChecklist(type) {
     <button id="btn-complete" class="big-btn in" ${view.completed ? 'disabled' : ''}>${label} 완료 처리</button>`;
   const wrap = document.getElementById('cl-items');
   wrap.innerHTML = view.entries.map(e => `
-    <label class="check-item">
+    <div class="check-item" data-entry="${e.id}">
       <input type="checkbox" data-id="${e.id}" ${e.checked ? 'checked' : ''} ${view.completed ? 'disabled' : ''}>
       <span>${esc(e.name)}</span>
       ${e.required ? '<span class="req">필수</span>' : ''}
       <span class="meta">${e.checked ? `${fmtTime(e.checkedAt)} · ${esc(e.checkedBy)}` : ''}</span>
-    </label>`).join('') || '<p>등록된 항목이 없습니다. 관리자 메뉴에서 항목을 추가하세요.</p>';
+      ${view.completed ? '' : `<button class="small" data-photo-attach="${e.id}">📷 사진</button>`}
+      ${e.photoPath ? `<button class="small" data-photo-view="${e.id}" data-path="${esc(e.photoPath)}">보기</button>` : ''}
+      ${e.photoPath && !view.completed ? `<button class="small" data-photo-del="${e.id}" data-path="${esc(e.photoPath)}">사진 삭제</button>` : ''}
+    </div>
+    <div class="photo-box" id="photo-${e.id}"></div>`).join('') ||
+    '<p>등록된 항목이 없습니다. 관리자 메뉴에서 항목을 추가하세요.</p>';
 
   wrap.querySelectorAll('input[type=checkbox]').forEach(cb => {
-    cb.onchange = () => {
-      if (!emp) { alert('근무자를 먼저 선택하세요.'); cb.checked = !cb.checked; return; }
-      api().CheckItem(Number(cb.dataset.id), cb.checked, emp.name).then(() => renderChecklist(type), showError);
+    cb.onchange = async () => {
+      const verified = await ensureEmployeeVerified();
+      if (!verified) { cb.checked = !cb.checked; return; }
+      api().CheckItem(Number(cb.dataset.id), cb.checked, verified.name).then(() => renderChecklist(type), showError);
     };
   });
-  document.getElementById('btn-complete').onclick = () => {
-    if (!emp) { alert('근무자를 먼저 선택하세요.'); return; }
-    api().CompleteChecklist(type, emp.name).then(() => renderChecklist(type), showError);
+  wrap.querySelectorAll('[data-photo-attach]').forEach(b => b.onclick = async () => {
+    if (!(await ensureEmployeeVerified())) return;
+    api().AttachChecklistPhoto(Number(b.dataset.photoAttach))
+      .then(path => { if (path) renderChecklist(type); }, showError);
+  });
+  wrap.querySelectorAll('[data-photo-view]').forEach(b => b.onclick = () => {
+    const box = document.getElementById(`photo-${b.dataset.photoView}`);
+    if (box.innerHTML) { box.innerHTML = ''; return; }
+    api().PhotoDataURL(b.dataset.path)
+      .then(url => { box.innerHTML = `<img src="${url}" alt="첨부 사진">`; }, showError);
+  });
+  wrap.querySelectorAll('[data-photo-del]').forEach(b => b.onclick = async () => {
+    if (!(await ensureEmployeeVerified())) return;
+    if (confirm('첨부 사진을 삭제할까요?')) {
+      api().RemoveChecklistPhoto(Number(b.dataset.photoDel), b.dataset.path)
+        .then(() => renderChecklist(type), showError);
+    }
+  });
+  document.getElementById('btn-complete').onclick = async () => {
+    const verified = await ensureEmployeeVerified();
+    if (!verified) return;
+    api().CompleteChecklist(type, verified.name).then(() => renderChecklist(type), showError);
   };
 }
 
@@ -185,9 +240,11 @@ async function renderAdminEmployees() {
     $view.innerHTML = `
       <h2>직원 관리</h2>
       <div class="card">
-        <table><tr><th>이름</th><th>상태</th><th></th></tr>
-        ${all.map(e => `<tr><td>${esc(e.name)}</td><td>${e.active ? '재직' : '비활성'}</td>
-          <td><button class="small" data-toggle="${e.id}">${e.active ? '비활성화' : '활성화'}</button></td></tr>`).join('')}</table>
+        <table><tr><th>이름</th><th>PIN</th><th>상태</th><th></th></tr>
+        ${all.map(e => `<tr><td>${esc(e.name)}</td><td>${e.pin ? '설정됨' : '없음'}</td>
+          <td>${e.active ? '재직' : '비활성'}</td>
+          <td><button class="small" data-pin="${e.id}">PIN 변경</button>
+              <button class="small" data-toggle="${e.id}">${e.active ? '비활성화' : '활성화'}</button></td></tr>`).join('')}</table>
         <div class="row" style="margin-top:10px">
           <input type="text" id="emp-name" placeholder="이름">
           <input type="password" id="emp-pin" placeholder="PIN (선택)">
@@ -204,6 +261,14 @@ async function renderAdminEmployees() {
       const e = all.find(x => x.id === Number(b.dataset.toggle));
       e.active = !e.active;
       api().UpdateEmployee(e).then(async () => { await refreshEmployees(); await render(); }, showError);
+    });
+    $view.querySelectorAll('[data-pin]').forEach(b => b.onclick = () => {
+      const e = all.find(x => x.id === Number(b.dataset.pin));
+      const pin = prompt(`${e.name} 님의 새 PIN을 입력하세요. (비우면 PIN 해제)`);
+      if (pin === null) return;
+      e.pin = pin;
+      verifiedEmployees.delete(e.id);
+      api().UpdateEmployee(e).then(render, showError);
     });
   };
   await render();
@@ -409,7 +474,26 @@ async function renderAdminSettings() {
       <p style="margin:8px 0; color:#718096; font-size:13px">퇴근 완료된 미동기화 기록을 날짜별 스프레드시트로 업로드합니다. (마감 스케줄에서도 자동 실행)</p>
       <button id="btn-sync" class="small primary" ${authorized ? '' : 'disabled'}>지금 동기화</button>
       <div id="sync-result"></div>
+    </div>
+    <div class="card">
+      <h3>관리자 PIN</h3>
+      <p style="margin:8px 0; color:#718096; font-size:13px">
+        설정하면 관리자 메뉴 진입 시 PIN을 요구합니다. 새 PIN을 비워두고 저장하면 잠금이 해제됩니다.</p>
+      <div class="row">
+        <input type="password" id="pin-cur" placeholder="현재 PIN (처음 설정 시 비움)">
+        <input type="password" id="pin-new" placeholder="새 PIN">
+        <button id="pin-save" class="small primary">저장</button>
+      </div>
+      <div id="pin-result"></div>
     </div>`;
+  document.getElementById('pin-save').onclick = () => {
+    api().SetAdminPIN(document.getElementById('pin-cur').value, document.getElementById('pin-new').value)
+      .then(() => {
+        document.getElementById('pin-result').innerHTML = '<p style="margin-top:8px">✅ 저장되었습니다.</p>';
+        document.getElementById('pin-cur').value = '';
+        document.getElementById('pin-new').value = '';
+      }, err => { document.getElementById('pin-result').innerHTML = ''; showError(err); });
+  };
   document.getElementById('btn-auth').onclick = () => {
     document.getElementById('auth-result').innerHTML = '<p style="margin-top:8px">브라우저에서 인증을 완료해주세요...</p>';
     api().GoogleAuthorize().then(renderAdminSettings, err => {
@@ -449,7 +533,8 @@ function handleScheduleAction(action) {
   else if (action === 'notify-close') navigate('checklist-close');
 }
 
-async function navigate(name) {
+async function navigate(name, opts = {}) {
+  if (name.startsWith('admin-') && !opts.skipAdminGate && !(await ensureAdminVerified())) return;
   if (currentView === 'admin-player' && name !== 'admin-player' && ytPlayer) {
     if (!confirm('영상 재생 중입니다. 화면을 이동하면 재생이 중지됩니다. 이동할까요?')) return;
     await api().StopPlayback();
@@ -474,7 +559,7 @@ document.getElementById('today').textContent = new Date().toLocaleDateString('ko
   if (window.runtime) {
     window.runtime.EventsOn('schedule:action', handleScheduleAction);
     window.runtime.EventsOn('player:start', async () => {
-      if (currentView !== 'admin-player') await navigate('admin-player');
+      if (currentView !== 'admin-player') await navigate('admin-player', { skipAdminGate: true });
       await beginPlayback();
     });
     window.runtime.EventsOn('player:stop', () => {
