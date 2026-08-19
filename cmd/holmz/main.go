@@ -45,6 +45,10 @@ func main() {
 	employeeRepo := sqlite.NewEmployeeRepo(db)
 	worklogRepo := sqlite.NewWorkLogRepo(db)
 	checklistRepo := sqlite.NewChecklistRepo(db)
+	checklistSvc := service.NewChecklistService(checklistRepo, nil)
+	if err := checklistSvc.SeedDefaults(); err != nil {
+		log.Printf("기본 체크리스트 등록 실패: %v", err)
+	}
 	drive := googledrive.New(cfgDir, browser.OpenURL)
 
 	exePath, err := os.Executable()
@@ -63,7 +67,7 @@ func main() {
 	app = NewApp(
 		employeeRepo,
 		service.NewWorkLogService(worklogRepo, nil),
-		service.NewChecklistService(checklistRepo, nil),
+		checklistSvc,
 		service.NewSyncService(worklogRepo, checklistRepo, drive),
 		drive,
 		service.NewScheduleService(sqlite.NewScheduleRepo(db), scheduler.New(exePath, nil)),

@@ -72,6 +72,55 @@ func TestCheckAndComplete(t *testing.T) {
 	}
 }
 
+func TestSeedDefaultsPopulatesEmptyDB(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	svc := NewChecklistService(sqlite.NewChecklistRepo(db), fixedClock("2026-08-20T09:00:00+09:00"))
+
+	if err := svc.SeedDefaults(); err != nil {
+		t.Fatalf("SeedDefaults: %v", err)
+	}
+	open, _ := svc.Templates("open")
+	close_, _ := svc.Templates("close")
+	if len(open) != 5 || len(close_) != 10 {
+		t.Fatalf("seeded open=%d close=%d, want 5/10", len(open), len(close_))
+	}
+	if open[0].Name != "2,4층 냉난방기 전원 켜기 (온도: 계절별 적정 온도 참고)" || open[0].SortOrder != 1 {
+		t.Errorf("open[0] = %+v", open[0])
+	}
+	if close_[9].Name != "관리자 보고 후 문단속" || close_[9].SortOrder != 10 {
+		t.Errorf("close[9] = %+v", close_[9])
+	}
+	for _, tpl := range append(open, close_...) {
+		if !tpl.Required || !tpl.Active {
+			t.Errorf("seeded template should be required+active: %+v", tpl)
+		}
+	}
+
+	// 멱등: 다시 호출해도 중복 생성되지 않는다
+	if err := svc.SeedDefaults(); err != nil {
+		t.Fatal(err)
+	}
+	if open, _ = svc.Templates("open"); len(open) != 5 {
+		t.Errorf("SeedDefaults not idempotent: open=%d", len(open))
+	}
+}
+
+func TestSeedDefaultsSkipsExistingTemplates(t *testing.T) {
+	svc := setupChecklist(t, fixedClock("2026-08-20T09:00:00+09:00")) // 이미 open 2건 존재
+	if err := svc.SeedDefaults(); err != nil {
+		t.Fatal(err)
+	}
+	open, _ := svc.Templates("open")
+	close_, _ := svc.Templates("close")
+	if len(open) != 2 || len(close_) != 0 {
+		t.Errorf("existing DB must not be reseeded: open=%d close=%d, want 2/0", len(open), len(close_))
+	}
+}
+
 func TestTemplateManagement(t *testing.T) {
 	svc := setupChecklist(t, fixedClock("2026-08-19T09:00:00+09:00"))
 	tpl, err := svc.AddTemplate("close", "소등", 1, true)
