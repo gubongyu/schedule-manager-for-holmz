@@ -521,7 +521,7 @@ async function renderAdminSchedule() {
           <td>${esc(s.taskName)}</td><td>${s.runTime}</td>
           <td>${(s.repeatDays && s.repeatDays.length) ? s.repeatDays.map(d => DAY_LABELS[d] || d).join(',') : '매일'}</td>
           <td>${ACTION_LABELS[s.actionType] || s.actionType}${s.actionType === 'play-audio'
-            ? `<div class="hint">${esc(fileBaseName(s.payload))}</div>` : ''}</td>
+            ? `<div class="hint">${esc(fileBaseName(s.payload))}${s.repeat > 1 ? ` × ${s.repeat}회` : ''}</div>` : ''}</td>
           <td><input type="checkbox" data-toggle="${s.id}" ${s.active ? 'checked' : ''}></td>
           <td>${s.actionType === 'play-audio'
             ? `<button class="small" data-test-audio="${esc(s.payload)}" title="미리듣기">▶ 테스트</button> ` : ''}
@@ -533,6 +533,7 @@ async function renderAdminSchedule() {
           <span id="sc-audio-wrap" style="display:none">
             <button id="sc-audio-pick" class="small">🔊 음성 파일 선택</button>
             <span id="sc-audio-name" class="hint"></span>
+            <label>재생 <input type="number" id="sc-repeat" min="1" max="5" value="1" style="width:56px">회</label>
           </span>
           <span id="sc-days">${Object.entries(DAY_LABELS).map(([v, l]) =>
             `<label style="margin-right:4px"><input type="checkbox" value="${v}">${l}</label>`).join('')}</span>
@@ -562,8 +563,10 @@ async function renderAdminSchedule() {
       const time = document.getElementById('sc-time').value.trim();
       if (!name || !/^\d{2}:\d{2}$/.test(time)) { alert('작업명과 시각(HH:MM)을 입력하세요.'); return; }
       const days = [...document.querySelectorAll('#sc-days input:checked')].map(c => c.value);
-      const payload = scAction.value === 'play-audio' ? audioPayload : '';
-      api().AddSchedule(name, time, days, scAction.value, payload).then(render, showError);
+      const isAudio = scAction.value === 'play-audio';
+      const payload = isAudio ? audioPayload : '';
+      const repeat = isAudio ? Number(document.getElementById('sc-repeat').value || 1) : 1;
+      api().AddSchedule(name, time, days, scAction.value, payload, repeat).then(render, showError);
     };
     $view.querySelectorAll('[data-test-audio]').forEach(b => b.onclick = () => playAudioPath(b.dataset.testAudio));
     $view.querySelectorAll('[data-toggle]').forEach(cb => cb.onchange = () =>

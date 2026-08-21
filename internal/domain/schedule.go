@@ -19,5 +19,7 @@ type ScheduleItem struct {
 	ActionType string   `json:"actionType"`
 	// Payload 는 동작별 부가 데이터다. play-audio: 재생할 음성 파일 경로.
 	Payload string `json:"payload"`
-	Active  bool   `json:"active"`
+	// Repeat 는 play-audio의 연속 재생 횟수다 (기본 1, 최대 5).
+	Repeat int  `json:"repeat"`
+	Active bool `json:"active"`
 }

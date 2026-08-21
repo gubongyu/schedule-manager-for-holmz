@@ -274,8 +274,8 @@ func (a *App) GetStartupAction() string { return a.startupAction }
 func (a *App) ListSchedules() ([]domain.ScheduleItem, error) {
 	return a.schedule.List()
 }
-func (a *App) AddSchedule(taskName, runTime string, repeatDays []string, actionType, payload string) (*domain.ScheduleItem, error) {
-	return a.schedule.Add(taskName, runTime, repeatDays, actionType, payload, true)
+func (a *App) AddSchedule(taskName, runTime string, repeatDays []string, actionType, payload string, repeat int) (*domain.ScheduleItem, error) {
+	return a.schedule.Add(taskName, runTime, repeatDays, actionType, payload, repeat, true)
 }
 
 // --- 음성 재생 (안내방송) ---

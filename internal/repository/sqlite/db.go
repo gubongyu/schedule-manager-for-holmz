@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS schedules (
 	repeat_days TEXT NOT NULL DEFAULT '',
 	action_type TEXT NOT NULL,
 	payload TEXT NOT NULL DEFAULT '',
+	repeat_count INTEGER NOT NULL DEFAULT 1,
 	active INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS playlist_items (
@@ -110,6 +111,7 @@ func Open(path string) (*DB, error) {
 	}
 	// 구버전 DB 마이그레이션: 이미 있는 컬럼이면 duplicate column 에러가 나므로 무시한다.
 	_, _ = sqlDB.Exec(`ALTER TABLE schedules ADD COLUMN payload TEXT NOT NULL DEFAULT ''`)
+	_, _ = sqlDB.Exec(`ALTER TABLE schedules ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 1`)
 	return &DB{SQL: sqlDB}, nil
 }
 
