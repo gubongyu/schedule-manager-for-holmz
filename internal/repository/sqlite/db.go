@@ -65,6 +65,13 @@ CREATE TABLE IF NOT EXISTS playlist_items (
 	video_id TEXT NOT NULL,
 	active INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS shifts (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	employee_id INTEGER NOT NULL REFERENCES employees(id),
+	weekday TEXT NOT NULL CHECK (weekday IN ('MON','TUE','WED','THU','FRI','SAT','SUN')),
+	start_time TEXT NOT NULL,
+	end_time TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS app_settings (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL DEFAULT ''

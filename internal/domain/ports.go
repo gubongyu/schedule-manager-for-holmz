@@ -35,6 +35,14 @@ type TaskScheduler interface {
 	Unregister(taskName string) error
 }
 
+// ShiftRepo 는 근로 스케줄(주간 근무 배치) 저장소 Port다.
+type ShiftRepo interface {
+	Create(s *Shift) error
+	Delete(id int64) error
+	// List 는 직원 이름을 채워 전체 배치를 반환한다.
+	List() ([]Shift, error)
+}
+
 // SettingsRepo 는 앱 설정(키-값) 저장소 Port다. 없는 키는 빈 값을 반환한다.
 type SettingsRepo interface {
 	Get(key string) (string, error)
