@@ -30,18 +30,17 @@ type App struct {
 	auth      *service.AuthService
 	shifts    *service.ShiftService
 
-	photosDir      string
-	startupAction  string // --action 플래그로 전달된 자동화 동작
-	startupPayload string // --payload 플래그 (play-audio: 음성 파일 경로)
+	photosDir     string
+	startupAction string // --action 플래그로 전달된 자동화 동작
 }
 
 func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, checklist *service.ChecklistService,
 	sync *service.SyncService, drive domain.DrivePort, schedule *service.ScheduleService,
 	player *service.PlayerService, auth *service.AuthService, shifts *service.ShiftService,
-	photosDir, startupAction, startupPayload string) *App {
+	photosDir, startupAction string) *App {
 	return &App{employees: employees, worklog: worklog, checklist: checklist,
 		sync: sync, drive: drive, schedule: schedule, player: player, auth: auth, shifts: shifts,
-		photosDir: photosDir, startupAction: startupAction, startupPayload: startupPayload}
+		photosDir: photosDir, startupAction: startupAction}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -49,12 +48,13 @@ func (a *App) startup(ctx context.Context) {
 	go a.player.RunWatchdog(ctx)
 	startTray(a)
 	if a.startupAction != "" {
-		a.HandleAction(a.startupAction, a.startupPayload)
+		a.HandleAction(a.startupAction)
 	}
 }
 
-// HandleAction 은 스케줄 트리거(--action=... [--payload=...])를 처리한다. 두 번째 인스턴스 실행 시에도 호출된다.
-func (a *App) HandleAction(action, payload string) {
+// HandleAction 은 스케줄 트리거(--action=...)를 처리한다. 두 번째 인스턴스 실행 시에도 호출된다.
+// play-audio 는 앱을 거치지 않고 작업 스케줄러가 Windows Media Player를 직접 실행한다.
+func (a *App) HandleAction(action string) {
 	switch action {
 	case domain.ActionUpload:
 		go func() {
@@ -66,12 +66,6 @@ func (a *App) HandleAction(action, payload string) {
 		a.player.Start()
 	case domain.ActionPlayStop:
 		a.player.Stop()
-	case domain.ActionPlayAudio:
-		// 안내방송은 백그라운드 동작이므로 창을 띄우지 않고 재생 이벤트만 보낸다.
-		if a.ctx != nil {
-			runtime.EventsEmit(a.ctx, "audio:play", payload)
-		}
-		return
 	}
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "schedule:action", action)
@@ -80,19 +74,11 @@ func (a *App) HandleAction(action, payload string) {
 }
 
 // onSecondInstance 는 스케줄러가 앱을 다시 실행했을 때 인자에서 동작을 꺼내 처리한다.
-// schtasks /TR 의 인자 인용부호는 실행 시 제거되지 않을 수 있어 payload 양끝 따옴표를 벗긴다.
 func (a *App) onSecondInstance(args []string) {
-	action, payload := "", ""
 	for _, arg := range args {
 		if v, ok := strings.CutPrefix(arg, "--action="); ok {
-			action = v
+			a.HandleAction(v)
 		}
-		if v, ok := strings.CutPrefix(arg, "--payload="); ok {
-			payload = strings.Trim(v, `"`)
-		}
-	}
-	if action != "" {
-		a.HandleAction(action, payload)
 	}
 }
 

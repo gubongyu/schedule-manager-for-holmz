@@ -5,7 +5,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/pkg/browser"
 	"github.com/wailsapp/wails/v2"
@@ -33,12 +32,8 @@ func configDir() string {
 }
 
 func main() {
-	action := flag.String("action", "", "스케줄 트리거 동작 (notify-open|notify-close|upload|play-start|play-stop|play-audio)")
-	payload := flag.String("payload", "", "동작 부가 데이터 (play-audio: 음성 파일 경로)")
+	action := flag.String("action", "", "스케줄 트리거 동작 (notify-open|notify-close|upload|play-start|play-stop)")
 	flag.Parse()
-
-	// 스케줄 트리거로 사용자 조작 없이 안내방송을 틀어야 하므로 WebView2 자동재생 제한을 해제한다.
-	os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", "--autoplay-policy=no-user-gesture-required")
 
 	cfgDir := configDir()
 	db, err := sqlite.Open(filepath.Join(cfgDir, "holmz.db"))
@@ -81,7 +76,6 @@ func main() {
 		service.NewShiftService(sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db), nil),
 		filepath.Join(cfgDir, "photos"),
 		*action,
-		strings.Trim(*payload, `"`),
 	)
 
 	err = wails.Run(&options.App{

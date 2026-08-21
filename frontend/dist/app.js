@@ -798,7 +798,6 @@ document.getElementById('today').textContent = new Date().toLocaleDateString('ko
   await refreshEmployees();
   if (window.runtime) {
     window.runtime.EventsOn('schedule:action', handleScheduleAction);
-    window.runtime.EventsOn('audio:play', playAudioPath);
     window.runtime.EventsOn('player:start', async () => {
       if (currentView !== 'admin-player') await navigate('admin-player', { skipAdminGate: true });
       await beginPlayback();

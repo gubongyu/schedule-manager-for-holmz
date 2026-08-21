@@ -12,6 +12,10 @@ import (
 
 var allDays = []string{"MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"}
 
+// wmplayerPath 는 레거시 Windows Media Player 경로다 (Windows 10/11 기본 포함).
+// 음성 재생 작업은 앱 대신 이 플레이어가 직접 실행해 앱이 꺼져 있어도 동작한다.
+const wmplayerPath = `C:\Program Files\Windows Media Player\wmplayer.exe`
+
 type SchtasksAdapter struct {
 	exePath string
 	run     func(args ...string) (string, error)
@@ -37,10 +41,13 @@ func (s *SchtasksAdapter) Register(item domain.ScheduleItem) error {
 	if len(days) == 0 {
 		days = allDays
 	}
-	// schtasks /TR 은 261자 제한이 있으므로 payload 경로가 지나치게 길면 등록에 실패할 수 있다.
-	tr := fmt.Sprintf(`"%s" --action=%s`, s.exePath, item.ActionType)
-	if item.Payload != "" {
-		tr += fmt.Sprintf(` --payload="%s"`, item.Payload)
+	// schtasks /TR 은 261자 제한이 있으므로 경로가 지나치게 길면 등록에 실패할 수 있다.
+	var tr string
+	if item.ActionType == domain.ActionPlayAudio {
+		// /play: 즉시 재생, /close: 재생 완료 후 창 닫기
+		tr = fmt.Sprintf(`"%s" /play /close "%s"`, wmplayerPath, item.Payload)
+	} else {
+		tr = fmt.Sprintf(`"%s" --action=%s`, s.exePath, item.ActionType)
 	}
 	args := []string{
 		"/Create", "/F",

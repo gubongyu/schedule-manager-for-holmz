@@ -42,7 +42,7 @@ func TestRegisterBuildsSchtasksArgs(t *testing.T) {
 	}
 }
 
-func TestRegisterIncludesPayload(t *testing.T) {
+func TestRegisterPlayAudioUsesMediaPlayer(t *testing.T) {
 	var calls []call
 	a := New(`C:\holmz\holmz.exe`, fakeRunner(&calls))
 	item := domain.ScheduleItem{TaskName: "안내방송", RunTime: "21:30",
@@ -51,9 +51,13 @@ func TestRegisterIncludesPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	created := strings.Join(calls[1].args, " ")
-	want := `/TR "C:\holmz\holmz.exe" --action=play-audio --payload="C:\HOLMZ 방송\마감 안내.mp3"`
+	// 음성 재생은 앱이 아니라 Windows Media Player가 직접 실행한다 (앱이 꺼져 있어도 동작).
+	want := `/TR "C:\Program Files\Windows Media Player\wmplayer.exe" /play /close "C:\HOLMZ 방송\마감 안내.mp3"`
 	if !strings.Contains(created, want) {
-		t.Errorf("create args missing payload:\n got: %s\nwant: %s", created, want)
+		t.Errorf("create args should launch wmplayer:\n got: %s\nwant: %s", created, want)
+	}
+	if strings.Contains(created, "holmz.exe") {
+		t.Errorf("play-audio task must not launch the app: %s", created)
 	}
 }
 
