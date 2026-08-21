@@ -1,38 +1,219 @@
+/* HOLMZ 디자인 시스템 — 목업 "블루 팔레트 + Apple 계열" 2a 사이드바형 기반.
+   모든 색은 토큰으로만 사용한다. 다크 테마는 [data-theme=dark] 토큰 재정의로 전환. */
+:root {
+  --bg: #f5f5f7;
+  --nav: #fbfbfd;
+  --card: #fff;
+  --border: rgba(0, 0, 0, .07);
+  --border2: rgba(0, 0, 0, .1);
+  --text: #1d1d1f;
+  --muted: #6e6e73;
+  --muted2: #8e8e93;
+  --faint: #c7c7cc;
+  --accent: #0071e3;
+  --accent-text: #0071e3;
+  --accent-bg: rgba(0, 113, 227, .1);
+  --on-accent: #fff;
+  --ok: #34c759;
+  --ok-text: #248a3d;
+  --ok-bg: rgba(52, 199, 89, .14);
+  --warn: #d70015;
+  --warn-text: #d70015;
+  --warn-bg: rgba(255, 59, 48, .13);
+  --bar: rgba(0, 0, 0, .07);
+  --surf2: #f5f5f7;
+  --ghost: rgba(0, 0, 0, .05);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .03);
+}
+[data-theme="dark"] {
+  --bg: #1c1c1e;
+  --nav: #18181a;
+  --card: #2c2c2e;
+  --border: rgba(255, 255, 255, .09);
+  --border2: rgba(255, 255, 255, .16);
+  --text: #f5f5f7;
+  --muted: #98989d;
+  --muted2: #8e8e93;
+  --faint: #5e5e63;
+  --accent: #0a84ff;
+  --accent-text: #6fb6ff;
+  --accent-bg: rgba(10, 132, 255, .22);
+  --on-accent: #fff;
+  --ok: #30d158;
+  --ok-text: #4fd873;
+  --ok-bg: rgba(48, 209, 88, .18);
+  --warn: #ff453a;
+  --warn-text: #ff7b70;
+  --warn-bg: rgba(255, 69, 58, .18);
+  --bar: rgba(255, 255, 255, .11);
+  --surf2: rgba(255, 255, 255, .06);
+  --ghost: rgba(255, 255, 255, .08);
+  --shadow: none;
+}
+
 * { box-sizing: border-box; margin: 0; }
-body { display: flex; height: 100vh; font-family: 'Malgun Gothic', 'Segoe UI', sans-serif; background: #f4f6fa; color: #1a202c; }
-#nav { width: 210px; background: #1f3864; color: #fff; display: flex; flex-direction: column; padding: 16px 10px; gap: 6px; }
-#nav .brand { font-size: 22px; font-weight: 700; padding: 8px 10px 18px; letter-spacing: 1px; }
-#nav button { text-align: left; padding: 12px 14px; border: 0; border-radius: 8px; background: transparent; color: #cfd9ec; font-size: 15px; cursor: pointer; }
-#nav button:hover { background: #2e5090; color: #fff; }
-#nav button.active { background: #2e5090; color: #fff; font-weight: 600; }
-#nav .nav-sep { margin: 14px 10px 4px; font-size: 12px; color: #8fa3c8; }
-#main { flex: 1; display: flex; flex-direction: column; overflow: auto; }
-#topbar { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #fff; border-bottom: 1px solid #dce6f1; }
-#topbar select { font-size: 15px; padding: 6px 10px; margin-left: 8px; }
-#view { padding: 24px; max-width: 900px; }
-h2 { margin-bottom: 16px; }
-.card { background: #fff; border: 1px solid #dce6f1; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
-.big-btn { font-size: 20px; padding: 20px 36px; border: 0; border-radius: 12px; cursor: pointer; color: #fff; margin-right: 12px; }
-.big-btn.in { background: #2f855a; }
-.big-btn.out { background: #c53030; }
-.big-btn:disabled { background: #a0aec0; cursor: default; }
+body {
+  display: flex; height: 100vh; overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
+    "Apple SD Gothic Neo", "Malgun Gothic", "Pretendard Variable", Pretendard, sans-serif;
+  letter-spacing: -.01em;
+  background: var(--bg); color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+.mono { font-family: "SF Mono", ui-monospace, Consolas, Menlo, monospace; font-variant-numeric: tabular-nums; }
+
+/* --- 사이드바 --- */
+#nav {
+  width: 214px; flex: none;
+  background: var(--nav); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 1px; padding: 14px 10px;
+  overflow-y: auto;
+}
+body.side-hidden #nav { display: none; }
+#nav .brand {
+  display: flex; align-items: center; gap: 9px;
+  padding: 0 8px 14px; font-size: 14px; font-weight: 700; letter-spacing: -.02em; color: var(--text);
+}
+#nav .brand::before { content: ""; width: 22px; height: 22px; border-radius: 7px; background: var(--accent); }
+#nav button {
+  display: flex; align-items: center; gap: 9px;
+  height: 32px; padding: 0 10px; border: 0; border-radius: 8px;
+  background: transparent; color: var(--muted);
+  font: 450 12.5px/1 inherit; letter-spacing: inherit; text-align: left; cursor: pointer;
+}
+#nav button .ico { width: 16px; text-align: center; flex: none; }
+#nav button:hover { background: var(--ghost); color: var(--text); }
+#nav button.active { background: var(--accent-bg); color: var(--accent-text); font-weight: 600; }
+#nav .nav-sep {
+  padding: 17px 10px 7px;
+  font-size: 10px; font-weight: 600; letter-spacing: .06em; color: var(--muted2);
+}
+
+/* --- 메인 / 상단바 --- */
+#main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+#topbar {
+  height: 52px; flex: none;
+  display: flex; align-items: center; gap: 12px; padding: 0 20px;
+  background: var(--nav); border-bottom: 1px solid var(--border);
+}
+#topbar .spacer { flex: 1; }
+#topbar #today { font-size: 12px; color: var(--muted); }
+#topbar label.emp { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--muted2); }
+#topbar select {
+  height: 30px; padding: 0 10px; font-size: 12px; font-weight: 500;
+  border: 1px solid var(--border2); border-radius: 9px;
+  background: var(--card); color: var(--text);
+}
+button.ghost {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 11px; border: 0; border-radius: 8px;
+  background: var(--ghost); color: var(--text);
+  font: 500 11.5px/1 inherit; letter-spacing: inherit; cursor: pointer;
+}
+button.ghost:hover { background: var(--accent-bg); color: var(--accent-text); }
+
+#view { flex: 1; overflow-y: auto; padding: 22px 26px; }
+#view > * { max-width: 920px; }
+h2 { font-size: 19px; font-weight: 700; letter-spacing: -.025em; margin-bottom: 16px; text-wrap: balance; }
+h3 { font-size: 13.5px; font-weight: 600; }
+
+/* --- 카드 / 배지 / 진행바 --- */
+.card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 18px 20px; margin-bottom: 16px; box-shadow: var(--shadow);
+}
+.pill {
+  display: inline-block; padding: 4px 10px; border-radius: 20px;
+  font-size: 10.5px; font-weight: 600; line-height: 1;
+}
+.pill.ok { background: var(--ok-bg); color: var(--ok-text); }
+.pill.warn { background: var(--warn-bg); color: var(--warn-text); }
+.pill.neu { background: var(--ghost); color: var(--muted); }
+.pill.acc { background: var(--accent-bg); color: var(--accent-text); }
+.progress { height: 6px; border-radius: 99px; background: var(--bar); overflow: hidden; }
+.progress > i { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+.progress > i.fill-ok { background: var(--ok); }
+.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.big-num { font-size: 26px; font-weight: 600; letter-spacing: -.03em; }
+
+/* --- 버튼 / 입력 --- */
+.big-btn {
+  font-size: 16px; font-weight: 600; letter-spacing: inherit;
+  padding: 14px 28px; border: 0; border-radius: 12px; cursor: pointer; color: var(--on-accent); margin-right: 10px;
+}
+.big-btn.in { background: var(--accent); }
+.big-btn.out { background: var(--warn); }
+.big-btn:disabled { background: var(--bar); color: var(--muted2); cursor: default; }
 .row { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
-input[type=text], input[type=date], input[type=number], input[type=password] { padding: 8px 10px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 14px; }
-button.small { padding: 8px 14px; border: 1px solid #2e5090; background: #fff; color: #2e5090; border-radius: 6px; cursor: pointer; }
-button.small.primary { background: #2e5090; color: #fff; }
-table { width: 100%; border-collapse: collapse; background: #fff; }
-th, td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; text-align: left; font-size: 14px; }
-th { background: #eef2f8; }
-.check-item { display: flex; align-items: center; gap: 12px; padding: 14px; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 10px; background: #fff; font-size: 17px; }
-.check-item input[type=checkbox] { width: 24px; height: 24px; }
-.check-item .req { color: #c53030; font-size: 12px; font-weight: 700; }
-.check-item .meta { margin-left: auto; color: #718096; font-size: 12px; }
-.photo-box { margin: -4px 0 10px 36px; }
-.photo-box img { max-width: 320px; max-height: 240px; border-radius: 8px; border: 1px solid #e2e8f0; }
-.done-banner { background: #c6f6d5; border: 1px solid #2f855a; color: #22543d; padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; }
-.status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; background: #fefcbf; color: #744210; }
-.error { color: #c53030; margin-top: 8px; }
+input[type=text], input[type=date], input[type=number], input[type=password] {
+  padding: 8px 10px; border: 1px solid var(--border2); border-radius: 9px;
+  font-size: 13px; font-family: inherit; letter-spacing: inherit;
+  background: var(--card); color: var(--text);
+}
+input::placeholder { color: var(--muted2); }
+select {
+  padding: 7px 10px; border: 1px solid var(--border2); border-radius: 9px;
+  font-size: 13px; font-family: inherit; background: var(--card); color: var(--text);
+}
+button.small {
+  height: 30px; padding: 0 13px; border: 0; border-radius: 9px;
+  background: var(--ghost); color: var(--text);
+  font: 500 12px/1 inherit; letter-spacing: inherit; cursor: pointer;
+}
+button.small:hover { background: var(--accent-bg); color: var(--accent-text); }
+button.small.primary { background: var(--accent); color: var(--on-accent); }
+button.small.primary:hover { filter: brightness(1.08); color: var(--on-accent); }
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+
+/* --- 표 --- */
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; font-size: 12.5px; }
+th { font-size: 10.5px; font-weight: 600; color: var(--muted2); }
+td { color: var(--text); }
+tr:last-child td { border-bottom: 0; }
+table input[type=text], table input[type=number] { padding: 6px 8px; font-size: 12.5px; }
+
+/* --- 체크리스트 --- */
+.check-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 15px; border: 1px solid var(--border); border-radius: 12px;
+  margin-bottom: 9px; background: var(--card); font-size: 14px; box-shadow: var(--shadow);
+}
+.check-item input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--accent); }
+.check-item .req { color: var(--warn-text); font-size: 10.5px; font-weight: 700; }
+.check-item .meta { margin-left: auto; color: var(--muted2); font-size: 11px; }
+.done-banner {
+  background: var(--ok-bg); color: var(--ok-text);
+  padding: 12px 16px; border-radius: 12px; margin-bottom: 14px; font-size: 13px; font-weight: 500;
+}
+.fatal-banner {
+  background: var(--warn-bg); color: var(--warn-text);
+  padding: 12px 16px; border-radius: 12px; margin-bottom: 14px; font-size: 13px; font-weight: 500;
+}
+.photo-box { margin: -3px 0 9px 34px; }
+.photo-box img { max-width: 320px; max-height: 240px; border-radius: 10px; border: 1px solid var(--border); }
+
+/* --- 상태·보조 텍스트 --- */
+.status-badge {
+  display: inline-block; padding: 3px 9px; border-radius: 20px;
+  font-size: 10.5px; font-weight: 600; background: var(--ghost); color: var(--muted);
+}
+.status-badge.synced { background: var(--ok-bg); color: var(--ok-text); }
+.hint { color: var(--muted2); font-size: 12px; }
+.error { color: var(--warn-text); margin-top: 8px; font-size: 12.5px; }
+pre { font-size: 12.5px; color: var(--muted); }
+label { font-size: 12.5px; color: var(--text); }
+a { color: var(--accent-text); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* --- 영상 재생 --- */
 #player-wrap { position: relative; background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 16/9; }
 #player-wrap iframe, #yt-player { width: 100%; height: 100%; }
 #player-wrap:fullscreen { border-radius: 0; }
-.fatal-banner { background: #fed7d7; border: 1px solid #c53030; color: #742a2a; padding: 12px 16px; border-radius: 8px; margin-bottom: 14px; }
+input[type=range] { accent-color: var(--accent); }
+
+@media (prefers-reduced-motion: no-preference) {
+  #nav button, button.ghost, button.small, .big-btn { transition: background .12s ease, color .12s ease; }
+}

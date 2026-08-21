@@ -5,6 +5,29 @@ const $view = document.getElementById('view');
 let currentView = 'dashboard';
 let employees = [];
 
+// --- 테마 / 사이드바 토글 (localStorage 유지) ---
+function applyTheme() {
+  const dark = localStorage.getItem('holmz-theme') === 'dark';
+  if (dark) document.documentElement.dataset.theme = 'dark';
+  else delete document.documentElement.dataset.theme;
+  document.getElementById('theme-toggle').textContent = dark ? '◑ 라이트' : '◐ 다크';
+}
+function applySidebar() {
+  document.body.classList.toggle('side-hidden', localStorage.getItem('holmz-side') === 'hidden');
+}
+document.getElementById('theme-toggle').onclick = () => {
+  localStorage.setItem('holmz-theme',
+    localStorage.getItem('holmz-theme') === 'dark' ? 'light' : 'dark');
+  applyTheme();
+};
+document.getElementById('side-toggle').onclick = () => {
+  localStorage.setItem('holmz-side',
+    localStorage.getItem('holmz-side') === 'hidden' ? 'shown' : 'hidden');
+  applySidebar();
+};
+applyTheme();
+applySidebar();
+
 const todayStr = () => new Date().toISOString().slice(0, 10);
 const fmtTime = (rfc3339) => rfc3339 ? new Date(rfc3339).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -59,25 +82,56 @@ function showError(err) {
 
 // --- 화면 렌더러 ---
 
+function elapsedSince(rfc3339) {
+  const ms = Date.now() - new Date(rfc3339).getTime();
+  if (ms < 0) return '0:00';
+  const h = Math.floor(ms / 3600e3), m = Math.floor(ms % 3600e3 / 60e3);
+  return `${h}:${String(m).padStart(2, '0')}`;
+}
+
 async function renderDashboard() {
   const emp = selectedEmployee();
-  let shiftHtml = '<p>근무자를 선택하세요.</p>';
-  if (emp) {
-    const cur = await api().CurrentShift(emp.id);
-    shiftHtml = cur
-      ? `<p><b>${esc(emp.name)}</b> 근무 중 — 출근 ${fmtTime(cur.clockIn)}</p>`
-      : `<p><b>${esc(emp.name)}</b> 근무 전 (출근 기록 없음)</p>`;
-  }
+  let cur = null;
+  if (emp) cur = await api().CurrentShift(emp.id);
   const [open, close, playing] = await Promise.all([
     api().TodayChecklist('open'), api().TodayChecklist('close'), api().PlayerStatus()]);
-  const clStatus = (v, label) => v.completed
-    ? `<p>${label}: ✅ 완료 (${fmtTime(v.completedAt)}, ${esc(v.completedBy)})</p>`
-    : `<p>${label}: ⬜ 미완료 (${v.entries.filter(e => e.checked).length}/${v.entries.length} 항목)</p>`;
+
+  const shiftHtml = !emp
+    ? '<p class="hint">근무자를 선택하세요.</p>'
+    : cur
+      ? `<div style="display:flex;align-items:flex-end;gap:16px">
+           <span class="big-num mono">${elapsedSince(cur.clockIn)}</span>
+           <span class="hint" style="padding-bottom:4px">${esc(emp.name)} · ${fmtTime(cur.clockIn)} 출근</span>
+         </div>`
+      : `<p class="hint"><b style="color:var(--text)">${esc(emp.name)}</b> — 근무 전 (출근 기록 없음)</p>`;
+
+  const clLine = (v, label) => {
+    const done = v.entries.filter(e => e.checked).length, total = v.entries.length;
+    const pct = total ? Math.round(done / total * 100) : 0;
+    return `<div style="margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;font-size:11.5px;font-weight:500;margin-bottom:7px">
+        <span>${label} 체크리스트</span>
+        <span class="mono" style="color:${v.completed ? 'var(--ok-text)' : 'var(--muted2)'}">${done} / ${total}</span>
+      </div>
+      <div class="progress"><i class="${v.completed ? 'fill-ok' : ''}" style="width:${Math.max(pct, 2)}%"></i></div>
+    </div>`;
+  };
+
   $view.innerHTML = `
     <h2>대시보드</h2>
-    <div class="card"><h3>오늘 근무</h3>${shiftHtml}</div>
-    <div class="card"><h3>오픈/마감 상태</h3>${clStatus(open, '오픈')}${clStatus(close, '마감')}</div>
-    <div class="card"><h3>영상 재생</h3><p>${playing ? '▶️ 재생 중' : '⏹ 정지됨'}</p></div>`;
+    <div class="card">
+      <div class="card-head"><h3>오늘 근무</h3>
+        ${cur ? '<span class="pill ok">근무중</span>' : '<span class="pill neu">근무 전</span>'}</div>
+      ${shiftHtml}
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>오픈 / 마감 상태</h3></div>
+      ${clLine(open, '오픈')}${clLine(close, '마감')}
+    </div>
+    <div class="card">
+      <div class="card-head"><h3>영상 재생</h3>
+        ${playing ? '<span class="pill acc">▶ 재생 중</span>' : '<span class="pill neu">■ 정지됨</span>'}</div>
+    </div>`;
 }
 
 async function renderWorklog() {
@@ -122,7 +176,7 @@ function historyTable(logs) {
   return `<table><tr><th>날짜</th><th>직원</th><th>출근</th><th>퇴근</th><th>근무시간</th><th>업무내용</th><th>동기화</th></tr>
     ${logs.map(w => `<tr><td>${w.date}</td><td>${esc(w.employeeName)}</td><td>${fmtTime(w.clockIn)}</td>
       <td>${fmtTime(w.clockOut)}</td><td>${w.totalHours || '-'}</td><td>${esc(w.taskNotes)}</td>
-      <td><span class="status-badge">${w.syncStatus}</span></td></tr>`).join('')}</table>`;
+      <td><span class="status-badge ${w.syncStatus === 'synced' ? 'synced' : ''}">${w.syncStatus === 'synced' ? '동기화됨' : '대기'}</span></td></tr>`).join('')}</table>`;
 }
 
 async function renderChecklist(type) {
@@ -222,7 +276,7 @@ async function renderAdminChecklist() {
         </div>
       </div>`;
     $view.innerHTML = `<h2>체크리스트 관리</h2>
-      <p style="margin-bottom:12px; color:#718096; font-size:13px">
+      <p class="hint" style="margin-bottom:12px">
         항목명·순서·필수 여부를 고친 뒤 [저장]을 누르세요. 변경은 다음에 생성되는 체크리스트부터 적용됩니다(이미 만들어진 오늘 체크리스트는 유지).</p>
       ${section('open', '오픈', open)}${section('close', '마감', close)}`;
     $view.querySelectorAll('[data-save]').forEach(b => b.onclick = () => {
@@ -308,7 +362,7 @@ async function renderAdminSchedule() {
       <h2>스케줄 관리</h2>
       <div class="card">
         <h3>자동화 템플릿</h3>
-        <p style="margin:8px 0; color:#718096; font-size:13px">
+        <p class="hint" style="margin:8px 0">
           오픈 시각: 체크리스트 알림 + 영상 재생 시작 / 마감 시각: 체크리스트 알림 + 근로기록 업로드 + 영상 재생 종료</p>
         <div class="row">
           <label>오픈 <input type="text" id="tpl-open" value="09:00" style="width:80px"></label>
@@ -333,7 +387,7 @@ async function renderAdminSchedule() {
             `<label style="margin-right:4px"><input type="checkbox" value="${v}">${l}</label>`).join('')}</span>
           <button id="sc-add" class="small primary">추가</button>
         </div>
-        <p style="margin-top:8px; color:#718096; font-size:12px">요일 미선택 시 매일 실행. Windows 작업 스케줄러 등록에는 관리자 권한이 필요할 수 있습니다.</p>
+        <p class="hint" style="margin-top:8px">요일 미선택 시 매일 실행. Windows 작업 스케줄러 등록에는 관리자 권한이 필요할 수 있습니다.</p>
       </div>`;
     document.getElementById('tpl-apply').onclick = () =>
       api().ApplyScheduleTemplate(document.getElementById('tpl-open').value, document.getElementById('tpl-close').value)
@@ -437,7 +491,7 @@ async function renderAdminPlayer() {
         <label>음량 <input type="range" id="pl-vol" min="0" max="100" value="60"></label>
       </div>
       <div id="player-wrap"><div id="yt-player"></div></div>
-      <p style="margin-top:8px; color:#718096; font-size:12px">
+      <p class="hint" style="margin-top:8px">
         재생 중에는 이 화면을 유지하세요. 오류·끊김은 워치독이 자동으로 재시작합니다.
         스케줄 자동 재생 시 이 화면으로 자동 전환됩니다.</p>
     </div>
@@ -479,7 +533,7 @@ async function renderAdminSettings() {
       <h3>Google 계정 연동</h3>
       <p style="margin:8px 0">상태:
         <span class="status-badge">${authorized ? '연동됨' : '미연동'}</span></p>
-      <p style="margin:8px 0; color:#718096; font-size:13px">
+      <p class="hint" style="margin:8px 0">
         Google Cloud Console에서 "데스크톱 앱" OAuth 클라이언트를 만들고,
         내려받은 credentials.json 을 <b>%APPDATA%\\HOLMZ\\credentials.json</b> 에 두세요.</p>
       <div class="row">
@@ -489,13 +543,13 @@ async function renderAdminSettings() {
     </div>
     <div class="card">
       <h3>근로기록 동기화</h3>
-      <p style="margin:8px 0; color:#718096; font-size:13px">퇴근 완료된 미동기화 기록을 날짜별 스프레드시트로 업로드합니다. (마감 스케줄에서도 자동 실행)</p>
+      <p class="hint" style="margin:8px 0">퇴근 완료된 미동기화 기록을 날짜별 스프레드시트로 업로드합니다. (마감 스케줄에서도 자동 실행)</p>
       <button id="btn-sync" class="small primary" ${authorized ? '' : 'disabled'}>지금 동기화</button>
       <div id="sync-result"></div>
     </div>
     <div class="card">
       <h3>관리자 PIN</h3>
-      <p style="margin:8px 0; color:#718096; font-size:13px">
+      <p class="hint" style="margin:8px 0">
         설정하면 관리자 메뉴 진입 시 PIN을 요구합니다. 새 PIN을 비워두고 저장하면 잠금이 해제됩니다.</p>
       <div class="row">
         <input type="password" id="pin-cur" placeholder="현재 PIN (처음 설정 시 비움)">

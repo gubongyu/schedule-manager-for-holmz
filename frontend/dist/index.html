@@ -9,22 +9,25 @@
 <body>
 <nav id="nav">
   <div class="brand">HOLMZ</div>
-  <button data-view="dashboard" class="active">대시보드</button>
-  <button data-view="worklog">근로기록</button>
-  <button data-view="checklist-open">오픈 체크리스트</button>
-  <button data-view="checklist-close">마감 체크리스트</button>
+  <button data-view="dashboard" class="active"><span class="ico">◫</span>대시보드</button>
+  <button data-view="worklog"><span class="ico">◷</span>근로기록</button>
+  <button data-view="checklist-open"><span class="ico">☐</span>오픈 체크리스트</button>
+  <button data-view="checklist-close"><span class="ico">☐</span>마감 체크리스트</button>
   <div class="nav-sep">관리자</div>
-  <button data-view="admin-worklog">근로기록 관리</button>
-  <button data-view="admin-schedule">스케줄 관리</button>
-  <button data-view="admin-player">영상 재생</button>
-  <button data-view="admin-checklist">체크리스트 관리</button>
-  <button data-view="admin-employees">직원 관리</button>
-  <button data-view="admin-settings">설정 (Google 연동)</button>
+  <button data-view="admin-worklog"><span class="ico">◷</span>근로기록 관리</button>
+  <button data-view="admin-schedule"><span class="ico">▦</span>스케줄 관리</button>
+  <button data-view="admin-player"><span class="ico">▷</span>영상 재생</button>
+  <button data-view="admin-checklist"><span class="ico">☑</span>체크리스트 관리</button>
+  <button data-view="admin-employees"><span class="ico">◎</span>직원 관리</button>
+  <button data-view="admin-settings"><span class="ico">⚙</span>설정 (Google 연동)</button>
 </nav>
 <main id="main">
   <header id="topbar">
+    <button id="side-toggle" class="ghost" title="사이드바 숨기기/보이기">▤ 사이드바</button>
     <span id="today"></span>
-    <label>근무자
+    <div class="spacer"></div>
+    <button id="theme-toggle" class="ghost" title="테마 전환">◐ 다크</button>
+    <label class="emp">근무자
       <select id="employee-select"></select>
     </label>
   </header>
