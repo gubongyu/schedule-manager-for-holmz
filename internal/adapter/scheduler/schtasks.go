@@ -37,10 +37,15 @@ func (s *SchtasksAdapter) Register(item domain.ScheduleItem) error {
 	if len(days) == 0 {
 		days = allDays
 	}
+	// schtasks /TR 은 261자 제한이 있으므로 payload 경로가 지나치게 길면 등록에 실패할 수 있다.
+	tr := fmt.Sprintf(`"%s" --action=%s`, s.exePath, item.ActionType)
+	if item.Payload != "" {
+		tr += fmt.Sprintf(` --payload="%s"`, item.Payload)
+	}
 	args := []string{
 		"/Create", "/F",
 		"/TN", taskPath(item.TaskName),
-		"/TR", fmt.Sprintf(`"%s" --action=%s`, s.exePath, item.ActionType),
+		"/TR", tr,
 		"/SC", "WEEKLY",
 		"/D", strings.Join(days, ","),
 		"/ST", item.RunTime,

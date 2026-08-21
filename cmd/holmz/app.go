@@ -30,17 +30,18 @@ type App struct {
 	auth      *service.AuthService
 	shifts    *service.ShiftService
 
-	photosDir     string
-	startupAction string // --action 플래그로 전달된 자동화 동작
+	photosDir      string
+	startupAction  string // --action 플래그로 전달된 자동화 동작
+	startupPayload string // --payload 플래그 (play-audio: 음성 파일 경로)
 }
 
 func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, checklist *service.ChecklistService,
 	sync *service.SyncService, drive domain.DrivePort, schedule *service.ScheduleService,
 	player *service.PlayerService, auth *service.AuthService, shifts *service.ShiftService,
-	photosDir, startupAction string) *App {
+	photosDir, startupAction, startupPayload string) *App {
 	return &App{employees: employees, worklog: worklog, checklist: checklist,
 		sync: sync, drive: drive, schedule: schedule, player: player, auth: auth, shifts: shifts,
-		photosDir: photosDir, startupAction: startupAction}
+		photosDir: photosDir, startupAction: startupAction, startupPayload: startupPayload}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -48,12 +49,12 @@ func (a *App) startup(ctx context.Context) {
 	go a.player.RunWatchdog(ctx)
 	startTray(a)
 	if a.startupAction != "" {
-		a.HandleAction(a.startupAction)
+		a.HandleAction(a.startupAction, a.startupPayload)
 	}
 }
 
-// HandleAction 은 스케줄 트리거(--action=...)를 처리한다. 두 번째 인스턴스 실행 시에도 호출된다.
-func (a *App) HandleAction(action string) {
+// HandleAction 은 스케줄 트리거(--action=... [--payload=...])를 처리한다. 두 번째 인스턴스 실행 시에도 호출된다.
+func (a *App) HandleAction(action, payload string) {
 	switch action {
 	case domain.ActionUpload:
 		go func() {
@@ -65,6 +66,12 @@ func (a *App) HandleAction(action string) {
 		a.player.Start()
 	case domain.ActionPlayStop:
 		a.player.Stop()
+	case domain.ActionPlayAudio:
+		// 안내방송은 백그라운드 동작이므로 창을 띄우지 않고 재생 이벤트만 보낸다.
+		if a.ctx != nil {
+			runtime.EventsEmit(a.ctx, "audio:play", payload)
+		}
+		return
 	}
 	if a.ctx != nil {
 		runtime.EventsEmit(a.ctx, "schedule:action", action)
@@ -73,11 +80,19 @@ func (a *App) HandleAction(action string) {
 }
 
 // onSecondInstance 는 스케줄러가 앱을 다시 실행했을 때 인자에서 동작을 꺼내 처리한다.
+// schtasks /TR 의 인자 인용부호는 실행 시 제거되지 않을 수 있어 payload 양끝 따옴표를 벗긴다.
 func (a *App) onSecondInstance(args []string) {
+	action, payload := "", ""
 	for _, arg := range args {
 		if v, ok := strings.CutPrefix(arg, "--action="); ok {
-			a.HandleAction(v)
+			action = v
 		}
+		if v, ok := strings.CutPrefix(arg, "--payload="); ok {
+			payload = strings.Trim(v, `"`)
+		}
+	}
+	if action != "" {
+		a.HandleAction(action, payload)
 	}
 }
 
@@ -273,8 +288,42 @@ func (a *App) GetStartupAction() string { return a.startupAction }
 func (a *App) ListSchedules() ([]domain.ScheduleItem, error) {
 	return a.schedule.List()
 }
-func (a *App) AddSchedule(taskName, runTime string, repeatDays []string, actionType string) (*domain.ScheduleItem, error) {
-	return a.schedule.Add(taskName, runTime, repeatDays, actionType, true)
+func (a *App) AddSchedule(taskName, runTime string, repeatDays []string, actionType, payload string) (*domain.ScheduleItem, error) {
+	return a.schedule.Add(taskName, runTime, repeatDays, actionType, payload, true)
+}
+
+// --- 음성 재생 (안내방송) ---
+
+var audioMimes = map[string]string{".mp3": "audio/mpeg", ".wav": "audio/wav", ".m4a": "audio/mp4", ".ogg": "audio/ogg"}
+
+// PickAudioFile 은 파일 대화상자로 음성 파일을 선택해 경로를 반환한다. 취소 시 빈 문자열.
+func (a *App) PickAudioFile() (string, error) {
+	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
+		Title: "음성 파일 선택",
+		Filters: []runtime.FileFilter{
+			{DisplayName: "오디오 (*.mp3;*.wav;*.m4a;*.ogg)", Pattern: "*.mp3;*.wav;*.m4a;*.ogg"},
+		},
+	})
+}
+
+// AudioDataURL 은 음성 파일을 data URL로 반환한다 (WebView <audio> 재생용, 30MB 제한).
+func (a *App) AudioDataURL(path string) (string, error) {
+	mime, ok := audioMimes[strings.ToLower(filepath.Ext(path))]
+	if !ok {
+		return "", errors.New("지원하지 않는 오디오 형식입니다 (mp3/wav/m4a/ogg)")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("음성 파일을 열 수 없습니다: %w", err)
+	}
+	if info.Size() > 30<<20 {
+		return "", errors.New("음성 파일이 너무 큽니다 (30MB 이하)")
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(b), nil
 }
 func (a *App) ToggleSchedule(id int64, active bool) error { return a.schedule.Toggle(id, active) }
 func (a *App) DeleteSchedule(id int64) error              { return a.schedule.Delete(id) }

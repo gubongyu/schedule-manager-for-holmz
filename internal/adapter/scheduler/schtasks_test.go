@@ -42,6 +42,21 @@ func TestRegisterBuildsSchtasksArgs(t *testing.T) {
 	}
 }
 
+func TestRegisterIncludesPayload(t *testing.T) {
+	var calls []call
+	a := New(`C:\holmz\holmz.exe`, fakeRunner(&calls))
+	item := domain.ScheduleItem{TaskName: "안내방송", RunTime: "21:30",
+		ActionType: domain.ActionPlayAudio, Payload: `C:\HOLMZ 방송\마감 안내.mp3`, Active: true}
+	if err := a.Register(item); err != nil {
+		t.Fatal(err)
+	}
+	created := strings.Join(calls[1].args, " ")
+	want := `/TR "C:\holmz\holmz.exe" --action=play-audio --payload="C:\HOLMZ 방송\마감 안내.mp3"`
+	if !strings.Contains(created, want) {
+		t.Errorf("create args missing payload:\n got: %s\nwant: %s", created, want)
+	}
+}
+
 func TestRegisterDefaultsToDaily(t *testing.T) {
 	var calls []call
 	a := New(`C:\x.exe`, fakeRunner(&calls))

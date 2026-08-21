@@ -19,9 +19,13 @@ func NewScheduleService(repo domain.ScheduleRepo, os domain.TaskScheduler) *Sche
 func (s *ScheduleService) List() ([]domain.ScheduleItem, error) { return s.repo.List() }
 
 // Add 는 스케줄을 저장하고, 활성 항목이면 OS에 등록한다. OS 등록 실패 시 저장을 되돌린다.
-func (s *ScheduleService) Add(taskName, runTime string, repeatDays []string, actionType string, active bool) (*domain.ScheduleItem, error) {
+// payload 는 동작별 부가 데이터로, play-audio(음성 재생)는 재생할 파일 경로가 필수다.
+func (s *ScheduleService) Add(taskName, runTime string, repeatDays []string, actionType, payload string, active bool) (*domain.ScheduleItem, error) {
+	if actionType == domain.ActionPlayAudio && payload == "" {
+		return nil, fmt.Errorf("음성 재생 작업은 재생할 파일을 선택해야 합니다")
+	}
 	item := &domain.ScheduleItem{TaskName: taskName, RunTime: runTime,
-		RepeatDays: repeatDays, ActionType: actionType, Active: active}
+		RepeatDays: repeatDays, ActionType: actionType, Payload: payload, Active: active}
 	if err := s.repo.Create(item); err != nil {
 		return nil, err
 	}
@@ -88,7 +92,7 @@ func (s *ScheduleService) ApplyTemplate(openTime, closeTime string) error {
 		{"영상 재생 종료", closeTime, domain.ActionPlayStop},
 	}
 	for _, it := range items {
-		if _, err := s.Add(it.name, it.time, nil, it.action, true); err != nil {
+		if _, err := s.Add(it.name, it.time, nil, it.action, "", true); err != nil {
 			return err
 		}
 	}

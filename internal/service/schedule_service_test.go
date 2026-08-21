@@ -46,7 +46,7 @@ func setupSchedule(t *testing.T) (*ScheduleService, *fakeTaskScheduler) {
 
 func TestScheduleAddRegistersActive(t *testing.T) {
 	svc, f := setupSchedule(t)
-	item, err := svc.Add("오픈 알림", "09:00", []string{"MON"}, domain.ActionNotifyOpen, true)
+	item, err := svc.Add("오픈 알림", "09:00", []string{"MON"}, domain.ActionNotifyOpen, "", true)
 	if err != nil || item.ID == 0 {
 		t.Fatalf("Add = %+v, err=%v", item, err)
 	}
@@ -55,7 +55,7 @@ func TestScheduleAddRegistersActive(t *testing.T) {
 	}
 
 	// 비활성 항목은 OS에 등록하지 않는다
-	if _, err := svc.Add("비활성", "10:00", nil, domain.ActionUpload, false); err != nil {
+	if _, err := svc.Add("비활성", "10:00", nil, domain.ActionUpload, "", false); err != nil {
 		t.Fatal(err)
 	}
 	if len(f.registered) != 1 {
@@ -65,7 +65,7 @@ func TestScheduleAddRegistersActive(t *testing.T) {
 
 func TestScheduleToggleAndDelete(t *testing.T) {
 	svc, f := setupSchedule(t)
-	item, err := svc.Add("작업", "09:00", nil, domain.ActionUpload, true)
+	item, err := svc.Add("작업", "09:00", nil, domain.ActionUpload, "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,10 +96,24 @@ func TestScheduleToggleAndDelete(t *testing.T) {
 	}
 }
 
+func TestPlayAudioRequiresPayload(t *testing.T) {
+	svc, f := setupSchedule(t)
+	if _, err := svc.Add("안내방송", "21:30", nil, domain.ActionPlayAudio, "", true); err == nil {
+		t.Fatal("play-audio without payload should fail")
+	}
+	item, err := svc.Add("안내방송", "21:30", nil, domain.ActionPlayAudio, `C:\audio\close.mp3`, true)
+	if err != nil || item.Payload != `C:\audio\close.mp3` {
+		t.Fatalf("Add with payload = %+v, err=%v", item, err)
+	}
+	if len(f.registered) != 1 {
+		t.Errorf("registered = %v", f.registered)
+	}
+}
+
 func TestScheduleAddRegisterFailureRollsBack(t *testing.T) {
 	svc, f := setupSchedule(t)
 	f.failRegister = true
-	if _, err := svc.Add("실패", "09:00", nil, domain.ActionUpload, true); err == nil {
+	if _, err := svc.Add("실패", "09:00", nil, domain.ActionUpload, "", true); err == nil {
 		t.Fatal("Add should propagate register error")
 	}
 	list, _ := svc.List()

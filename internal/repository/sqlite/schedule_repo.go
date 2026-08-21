@@ -21,8 +21,8 @@ func splitDays(s string) []string {
 
 func (r *ScheduleRepo) Create(s *domain.ScheduleItem) error {
 	res, err := r.db.SQL.Exec(
-		"INSERT INTO schedules (task_name, run_time, repeat_days, action_type, active) VALUES (?,?,?,?,?)",
-		s.TaskName, s.RunTime, joinDays(s.RepeatDays), s.ActionType, s.Active)
+		"INSERT INTO schedules (task_name, run_time, repeat_days, action_type, payload, active) VALUES (?,?,?,?,?,?)",
+		s.TaskName, s.RunTime, joinDays(s.RepeatDays), s.ActionType, s.Payload, s.Active)
 	if err != nil {
 		return err
 	}
@@ -32,8 +32,8 @@ func (r *ScheduleRepo) Create(s *domain.ScheduleItem) error {
 
 func (r *ScheduleRepo) Update(s *domain.ScheduleItem) error {
 	_, err := r.db.SQL.Exec(
-		"UPDATE schedules SET task_name=?, run_time=?, repeat_days=?, action_type=?, active=? WHERE id=?",
-		s.TaskName, s.RunTime, joinDays(s.RepeatDays), s.ActionType, s.Active, s.ID)
+		"UPDATE schedules SET task_name=?, run_time=?, repeat_days=?, action_type=?, payload=?, active=? WHERE id=?",
+		s.TaskName, s.RunTime, joinDays(s.RepeatDays), s.ActionType, s.Payload, s.Active, s.ID)
 	return err
 }
 
@@ -44,7 +44,7 @@ func (r *ScheduleRepo) Delete(id int64) error {
 
 func (r *ScheduleRepo) List() ([]domain.ScheduleItem, error) {
 	rows, err := r.db.SQL.Query(
-		"SELECT id, task_name, run_time, repeat_days, action_type, active FROM schedules ORDER BY run_time, id")
+		"SELECT id, task_name, run_time, repeat_days, action_type, payload, active FROM schedules ORDER BY run_time, id")
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ func (r *ScheduleRepo) List() ([]domain.ScheduleItem, error) {
 	for rows.Next() {
 		var s domain.ScheduleItem
 		var days string
-		if err := rows.Scan(&s.ID, &s.TaskName, &s.RunTime, &days, &s.ActionType, &s.Active); err != nil {
+		if err := rows.Scan(&s.ID, &s.TaskName, &s.RunTime, &days, &s.ActionType, &s.Payload, &s.Active); err != nil {
 			return nil, err
 		}
 		s.RepeatDays = splitDays(days)
