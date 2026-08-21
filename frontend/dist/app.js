@@ -28,7 +28,9 @@ document.getElementById('side-toggle').onclick = () => {
 applyTheme();
 applySidebar();
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// 로컬(매장) 시간대 기준 YYYY-MM-DD. toISOString은 UTC라 자정~오전 9시(KST)에 전날이 나온다.
+const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const todayStr = () => localDateStr(new Date());
 const fmtTime = (rfc3339) => rfc3339 ? new Date(rfc3339).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-';
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -188,7 +190,7 @@ async function renderWorklog() {
     if (v && await ensureEmployeeVerified()) api().AddNote(emp.id, v).then(renderWorklog, showError);
   };
 
-  const from = new Date(Date.now() - 30 * 86400e3).toISOString().slice(0, 10);
+  const from = localDateStr(new Date(Date.now() - 30 * 86400e3));
   const logs = (await api().WorkLogHistory(from, todayStr(), emp.id)) || [];
   document.getElementById('my-history').innerHTML = historyTable(logs);
 }
@@ -259,7 +261,7 @@ async function renderAdminWorklog() {
   $view.innerHTML = `
     <h2>근로기록 관리</h2>
     <div class="card row">
-      <input type="date" id="f-from" value="${new Date(Date.now() - 7 * 86400e3).toISOString().slice(0, 10)}">
+      <input type="date" id="f-from" value="${localDateStr(new Date(Date.now() - 7 * 86400e3))}">
       <input type="date" id="f-to" value="${todayStr()}">
       <select id="f-emp"><option value="0">전체 직원</option>
         ${employees.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
