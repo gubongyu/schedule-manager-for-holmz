@@ -73,6 +73,7 @@ func main() {
 		service.NewScheduleService(sqlite.NewScheduleRepo(db), scheduler.New(exePath, nil)),
 		service.NewPlayerService(sqlite.NewPlaylistRepo(db), emit, nil),
 		service.NewAuthService(employeeRepo, sqlite.NewSettingsRepo(db)),
+		service.NewShiftService(sqlite.NewShiftRepo(db)),
 		filepath.Join(cfgDir, "photos"),
 		*action,
 	)

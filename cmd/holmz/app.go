@@ -28,6 +28,7 @@ type App struct {
 	schedule  *service.ScheduleService
 	player    *service.PlayerService
 	auth      *service.AuthService
+	shifts    *service.ShiftService
 
 	photosDir     string
 	startupAction string // --action 플래그로 전달된 자동화 동작
@@ -35,9 +36,10 @@ type App struct {
 
 func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, checklist *service.ChecklistService,
 	sync *service.SyncService, drive domain.DrivePort, schedule *service.ScheduleService,
-	player *service.PlayerService, auth *service.AuthService, photosDir, startupAction string) *App {
+	player *service.PlayerService, auth *service.AuthService, shifts *service.ShiftService,
+	photosDir, startupAction string) *App {
 	return &App{employees: employees, worklog: worklog, checklist: checklist,
-		sync: sync, drive: drive, schedule: schedule, player: player, auth: auth,
+		sync: sync, drive: drive, schedule: schedule, player: player, auth: auth, shifts: shifts,
 		photosDir: photosDir, startupAction: startupAction}
 }
 
@@ -271,6 +273,14 @@ func (a *App) DeleteSchedule(id int64) error              { return a.schedule.De
 func (a *App) ApplyScheduleTemplate(openTime, closeTime string) error {
 	return a.schedule.ApplyTemplate(openTime, closeTime)
 }
+
+// --- 근로 스케줄 (주간 근무 배치) ---
+
+func (a *App) ShiftWeek() ([]service.DayShifts, error) { return a.shifts.Week() }
+func (a *App) AddShift(employeeID int64, weekday, start, end string) (*domain.Shift, error) {
+	return a.shifts.Add(employeeID, weekday, start, end)
+}
+func (a *App) DeleteShift(id int64) error { return a.shifts.Remove(id) }
 
 // --- 영상 재생 ---
 

@@ -208,6 +208,38 @@ label { font-size: 12.5px; color: var(--text); }
 a { color: var(--accent-text); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* --- 근로 스케줄 (주간 그리드) --- */
+.week-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+.day-col {
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 10px; min-height: 120px; box-shadow: var(--shadow);
+}
+.day-col .day-head {
+  font-size: 11px; font-weight: 600; color: var(--muted2);
+  text-align: center; padding-bottom: 8px; border-bottom: 1px solid var(--border); margin-bottom: 8px;
+}
+.day-col.today .day-head { color: var(--accent-text); }
+.day-col.today { border-color: var(--accent); }
+.shift-chip {
+  background: var(--accent-bg); color: var(--accent-text);
+  border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; font-size: 11px; line-height: 1.4;
+  display: flex; justify-content: space-between; align-items: center; gap: 4px;
+}
+.shift-chip .del {
+  border: 0; background: transparent; color: var(--accent-text);
+  cursor: pointer; font-size: 11px; padding: 0 2px; opacity: .6;
+}
+.shift-chip .del:hover { opacity: 1; }
+.day-cells { display: flex; gap: 6px; }
+.day-cell {
+  flex: 1; padding: 9px 0; border-radius: 9px; background: var(--surf2); text-align: center;
+}
+.day-cell .d { font-size: 9.5px; font-weight: 500; color: var(--muted2); }
+.day-cell .n { font-size: 11px; font-weight: 600; margin-top: 6px; }
+.day-cell.today { background: var(--accent); }
+.day-cell.today .d { color: var(--on-accent); opacity: .75; }
+.day-cell.today .n { color: var(--on-accent); }
+
 /* --- 영상 재생 --- */
 #player-wrap { position: relative; background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 16/9; }
 #player-wrap iframe, #yt-player { width: 100%; height: 100%; }

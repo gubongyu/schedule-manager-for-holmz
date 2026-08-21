@@ -93,8 +93,8 @@ async function renderDashboard() {
   const emp = selectedEmployee();
   let cur = null;
   if (emp) cur = await api().CurrentShift(emp.id);
-  const [open, close, playing] = await Promise.all([
-    api().TodayChecklist('open'), api().TodayChecklist('close'), api().PlayerStatus()]);
+  const [open, close, playing, week] = await Promise.all([
+    api().TodayChecklist('open'), api().TodayChecklist('close'), api().PlayerStatus(), api().ShiftWeek()]);
 
   const shiftHtml = !emp
     ? '<p class="hint">근무자를 선택하세요.</p>'
@@ -131,7 +131,27 @@ async function renderDashboard() {
     <div class="card">
       <div class="card-head"><h3>영상 재생</h3>
         ${playing ? '<span class="pill acc">▶ 재생 중</span>' : '<span class="pill neu">■ 정지됨</span>'}</div>
-    </div>`;
+    </div>
+    ${weekCard(week)}`;
+}
+
+// 대시보드 "금주 근무 스케줄" 카드: 요일별 인원 + 오늘 근무 명단
+function weekCard(week) {
+  const today = todayWeekday();
+  const todayShifts = (week.find(d => d.weekday === today) || { shifts: [] }).shifts;
+  return `<div class="card">
+    <div class="card-head"><h3>금주 근무 스케줄</h3></div>
+    <div class="day-cells">
+      ${week.map(d => `
+        <div class="day-cell ${d.weekday === today ? 'today' : ''}">
+          <div class="d">${DAY_LABELS[d.weekday]}</div>
+          <div class="n mono">${d.shifts.length ? d.shifts.length + '명' : '—'}</div>
+        </div>`).join('')}
+    </div>
+    ${todayShifts.length ? `<div style="margin-top:12px;font-size:12px">
+      오늘: ${todayShifts.map(s => `<b>${esc(s.employeeName)}</b> <span class="mono hint">${s.start}–${s.end}</span>`).join(' · ')}
+    </div>` : ''}
+  </div>`;
 }
 
 async function renderWorklog() {
@@ -354,6 +374,57 @@ const ACTION_LABELS = {
   'play-stop': '영상 재생 종료',
 };
 const DAY_LABELS = { MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금', SAT: '토', SUN: '일' };
+
+const todayWeekday = () => ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][new Date().getDay()];
+
+async function renderAdminShifts() {
+  const render = async () => {
+    const [week, emps] = await Promise.all([api().ShiftWeek(), api().ListEmployees(true)]);
+    const today = todayWeekday();
+    $view.innerHTML = `
+      <h2>근로 스케줄</h2>
+      <p class="hint" style="margin-bottom:12px">직원별 주간 근무 배치입니다. 자동화 작업(스케줄 관리)과는 별개입니다.</p>
+      <div class="week-grid" style="margin-bottom:16px">
+        ${week.map(d => `
+          <div class="day-col ${d.weekday === today ? 'today' : ''}">
+            <div class="day-head">${DAY_LABELS[d.weekday]}</div>
+            ${d.shifts.map(s => `
+              <div class="shift-chip">
+                <span><b>${esc(s.employeeName)}</b><br><span class="mono">${s.start}–${s.end}</span></span>
+                <button class="del" data-del-shift="${s.id}" title="삭제">✕</button>
+              </div>`).join('')}
+          </div>`).join('')}
+      </div>
+      <div class="card">
+        <h3>배치 추가</h3>
+        <div class="row" style="margin-top:12px">
+          <select id="sh-emp">${emps.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+          <span id="sh-days">${Object.entries(DAY_LABELS).map(([v, l]) =>
+            `<label style="margin-right:4px"><input type="checkbox" value="${v}">${l}</label>`).join('')}</span>
+          <input type="text" id="sh-start" placeholder="09:00" style="width:80px">
+          <span class="hint">–</span>
+          <input type="text" id="sh-end" placeholder="18:00" style="width:80px">
+          <button id="sh-add" class="small primary">추가</button>
+        </div>
+        <p class="hint" style="margin-top:8px">요일을 여러 개 선택하면 같은 시간으로 한 번에 등록됩니다.</p>
+      </div>`;
+    document.getElementById('sh-add').onclick = async () => {
+      const empId = Number(document.getElementById('sh-emp').value || 0);
+      const days = [...document.querySelectorAll('#sh-days input:checked')].map(c => c.value);
+      const start = document.getElementById('sh-start').value.trim();
+      const end = document.getElementById('sh-end').value.trim();
+      if (!empId || !days.length) { alert('직원과 요일을 선택하세요.'); return; }
+      try {
+        for (const d of days) await api().AddShift(empId, d, start, end);
+        await render();
+      } catch (err) { showError(err); }
+    };
+    $view.querySelectorAll('[data-del-shift]').forEach(b => b.onclick = () => {
+      api().DeleteShift(Number(b.dataset.delShift)).then(render, showError);
+    });
+  };
+  await render();
+}
 
 async function renderAdminSchedule() {
   const render = async () => {
@@ -592,6 +663,7 @@ const views = {
   'checklist-open': () => renderChecklist('open'),
   'checklist-close': () => renderChecklist('close'),
   'admin-worklog': renderAdminWorklog,
+  'admin-shifts': renderAdminShifts,
   'admin-checklist': renderAdminChecklist,
   'admin-schedule': renderAdminSchedule,
   'admin-player': renderAdminPlayer,
