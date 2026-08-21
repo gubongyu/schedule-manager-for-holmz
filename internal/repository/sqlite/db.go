@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS shifts (
 	start_time TEXT NOT NULL,
 	end_time TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS shift_overrides (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	date TEXT NOT NULL,
+	employee_id INTEGER NOT NULL REFERENCES employees(id),
+	type TEXT NOT NULL CHECK (type IN ('off','work')),
+	start_time TEXT NOT NULL DEFAULT '',
+	end_time TEXT NOT NULL DEFAULT '',
+	note TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_shift_overrides_date ON shift_overrides(date);
 CREATE TABLE IF NOT EXISTS app_settings (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL DEFAULT ''

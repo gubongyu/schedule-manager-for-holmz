@@ -132,9 +132,15 @@ func (a *App) SetEmployeePIN(employeeID int64, pin string) error {
 
 // --- 근로기록 ---
 
-func (a *App) ClockIn(employeeID int64) (*domain.WorkLog, error)  { return a.worklog.ClockIn(employeeID) }
-func (a *App) ClockOut(employeeID int64) (*domain.WorkLog, error) { return a.worklog.ClockOut(employeeID) }
-func (a *App) AddNote(employeeID int64, note string) error        { return a.worklog.AddNote(employeeID, note) }
+func (a *App) ClockIn(employeeID int64) (*domain.WorkLog, error) {
+	return a.worklog.ClockIn(employeeID)
+}
+func (a *App) ClockOut(employeeID int64) (*domain.WorkLog, error) {
+	return a.worklog.ClockOut(employeeID)
+}
+func (a *App) AddNote(employeeID int64, note string) error {
+	return a.worklog.AddNote(employeeID, note)
+}
 func (a *App) CurrentShift(employeeID int64) (*domain.WorkLog, error) {
 	return a.worklog.Current(employeeID)
 }
@@ -144,7 +150,9 @@ func (a *App) WorkLogHistory(from, to string, employeeID int64) ([]domain.WorkLo
 
 // --- 체크리스트 ---
 
-func (a *App) TodayChecklist(typ string) (*service.ChecklistView, error) { return a.checklist.Today(typ) }
+func (a *App) TodayChecklist(typ string) (*service.ChecklistView, error) {
+	return a.checklist.Today(typ)
+}
 func (a *App) CheckItem(entryID int64, checked bool, by string) error {
 	return a.checklist.Check(entryID, checked, by)
 }
@@ -281,6 +289,16 @@ func (a *App) AddShift(employeeID int64, weekday, start, end string) (*domain.Sh
 	return a.shifts.Add(employeeID, weekday, start, end)
 }
 func (a *App) DeleteShift(id int64) error { return a.shifts.Remove(id) }
+
+func (a *App) WeekRoster() ([]service.DayRoster, error)          { return a.shifts.WeekRoster() }
+func (a *App) ShiftWeekTotals() ([]service.EmployeeHours, error) { return a.shifts.WeekTotals() }
+func (a *App) ShiftOverrides() ([]domain.ShiftOverride, error) {
+	return a.shifts.UpcomingOverrides()
+}
+func (a *App) AddShiftOverride(employeeID int64, date, typ, start, end, note string) (*domain.ShiftOverride, error) {
+	return a.shifts.AddOverride(employeeID, date, typ, start, end, note)
+}
+func (a *App) DeleteShiftOverride(id int64) error { return a.shifts.RemoveOverride(id) }
 
 // --- 영상 재생 ---
 

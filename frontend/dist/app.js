@@ -94,7 +94,7 @@ async function renderDashboard() {
   let cur = null;
   if (emp) cur = await api().CurrentShift(emp.id);
   const [open, close, playing, week] = await Promise.all([
-    api().TodayChecklist('open'), api().TodayChecklist('close'), api().PlayerStatus(), api().ShiftWeek()]);
+    api().TodayChecklist('open'), api().TodayChecklist('close'), api().PlayerStatus(), api().WeekRoster()]);
 
   const shiftHtml = !emp
     ? '<p class="hint">근무자를 선택하세요.</p>'
@@ -135,21 +135,23 @@ async function renderDashboard() {
     ${weekCard(week)}`;
 }
 
-// 대시보드 "금주 근무 스케줄" 카드: 요일별 인원 + 오늘 근무 명단
+// 대시보드 "금주 근무 스케줄" 카드: 휴가·대타가 반영된 요일별 인원 + 오늘 근무 명단
 function weekCard(week) {
-  const today = todayWeekday();
-  const todayShifts = (week.find(d => d.weekday === today) || { shifts: [] }).shifts;
+  const todayDate = todayStr();
+  const today = week.find(d => d.date === todayDate) || { entries: [], off: [] };
   return `<div class="card">
-    <div class="card-head"><h3>금주 근무 스케줄</h3></div>
+    <div class="card-head"><h3>금주 근무 스케줄</h3><span class="hint">휴가·대타 반영</span></div>
     <div class="day-cells">
       ${week.map(d => `
-        <div class="day-cell ${d.weekday === today ? 'today' : ''}">
+        <div class="day-cell ${d.date === todayDate ? 'today' : ''}">
           <div class="d">${DAY_LABELS[d.weekday]}</div>
-          <div class="n mono">${d.shifts.length ? d.shifts.length + '명' : '—'}</div>
+          <div class="n mono">${d.entries.length ? d.entries.length + '명' : '—'}</div>
         </div>`).join('')}
     </div>
-    ${todayShifts.length ? `<div style="margin-top:12px;font-size:12px">
-      오늘: ${todayShifts.map(s => `<b>${esc(s.employeeName)}</b> <span class="mono hint">${s.start}–${s.end}</span>`).join(' · ')}
+    ${today.entries.length || today.off.length ? `<div style="margin-top:12px;font-size:12px">
+      ${today.entries.length ? `오늘: ${today.entries.map(s =>
+        `<b>${esc(s.employeeName)}</b>${s.cover ? ' <span class="pill acc">대타</span>' : ''} <span class="mono hint">${s.start}–${s.end}</span>`).join(' · ')}` : ''}
+      ${today.off.length ? `<div class="hint" style="margin-top:6px">휴가: ${today.off.map(esc).join(', ')}</div>` : ''}
     </div>` : ''}
   </div>`;
 }
@@ -379,8 +381,10 @@ const todayWeekday = () => ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][new
 
 async function renderAdminShifts() {
   const render = async () => {
-    const [week, emps] = await Promise.all([api().ShiftWeek(), api().ListEmployees(true)]);
+    const [week, emps, totals, overrides] = await Promise.all([
+      api().ShiftWeek(), api().ListEmployees(true), api().ShiftWeekTotals(), api().ShiftOverrides()]);
     const today = todayWeekday();
+    const maxHours = Math.max(...totals.map(t => t.hours), 1);
     $view.innerHTML = `
       <h2>근로 스케줄</h2>
       <p class="hint" style="margin-bottom:12px">직원별 주간 근무 배치입니다. 자동화 작업(스케줄 관리)과는 별개입니다.</p>
@@ -407,6 +411,37 @@ async function renderAdminShifts() {
           <button id="sh-add" class="small primary">추가</button>
         </div>
         <p class="hint" style="margin-top:8px">요일을 여러 개 선택하면 같은 시간으로 한 번에 등록됩니다.</p>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>이번 주 직원별 배치 시간</h3><span class="hint">휴가·대타 반영</span></div>
+        ${totals.length ? totals.map(t => `
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+            <span style="width:64px;font-size:12px">${esc(t.name)}</span>
+            <div class="progress" style="flex:1;height:8px"><i style="width:${Math.round(t.hours / maxHours * 100)}%"></i></div>
+            <span class="mono hint" style="width:48px;text-align:right">${t.hours}h</span>
+          </div>`).join('') : '<p class="hint">배치가 없습니다.</p>'}
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>예외 (휴가 · 대타)</h3><span class="hint">향후 90일</span></div>
+        ${overrides.length ? `<table style="margin-bottom:12px">
+          <tr><th>날짜</th><th>직원</th><th>유형</th><th>시간</th><th>메모</th><th></th></tr>
+          ${overrides.map(o => `<tr>
+            <td class="mono">${o.date}</td><td>${esc(o.employeeName)}</td>
+            <td>${o.type === 'off' ? '<span class="pill warn">휴가</span>' : '<span class="pill acc">대타</span>'}</td>
+            <td class="mono">${o.type === 'work' ? `${o.start}–${o.end}` : '—'}</td>
+            <td class="hint">${esc(o.note)}</td>
+            <td><button class="small" data-del-ov="${o.id}">삭제</button></td></tr>`).join('')}</table>`
+        : '<p class="hint" style="margin-bottom:12px">등록된 예외가 없습니다.</p>'}
+        <div class="row">
+          <input type="date" id="ov-date" value="${todayStr()}">
+          <select id="ov-emp">${emps.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+          <select id="ov-type"><option value="off">휴가 (해당일 근무 제외)</option><option value="work">대타/추가 근무</option></select>
+          <input type="text" id="ov-start" placeholder="10:00" style="width:80px" disabled>
+          <span class="hint">–</span>
+          <input type="text" id="ov-end" placeholder="16:00" style="width:80px" disabled>
+          <input type="text" id="ov-note" placeholder="메모 (선택)" style="flex:1">
+          <button id="ov-add" class="small primary">추가</button>
+        </div>
       </div>`;
     document.getElementById('sh-add').onclick = async () => {
       const empId = Number(document.getElementById('sh-emp').value || 0);
@@ -421,6 +456,26 @@ async function renderAdminShifts() {
     };
     $view.querySelectorAll('[data-del-shift]').forEach(b => b.onclick = () => {
       api().DeleteShift(Number(b.dataset.delShift)).then(render, showError);
+    });
+    const ovType = document.getElementById('ov-type');
+    const syncOvTimeInputs = () => {
+      const isWork = ovType.value === 'work';
+      document.getElementById('ov-start').disabled = !isWork;
+      document.getElementById('ov-end').disabled = !isWork;
+    };
+    ovType.onchange = syncOvTimeInputs;
+    document.getElementById('ov-add').onclick = () => {
+      api().AddShiftOverride(
+        Number(document.getElementById('ov-emp').value || 0),
+        document.getElementById('ov-date').value,
+        ovType.value,
+        document.getElementById('ov-start').value.trim(),
+        document.getElementById('ov-end').value.trim(),
+        document.getElementById('ov-note').value.trim(),
+      ).then(render, showError);
+    };
+    $view.querySelectorAll('[data-del-ov]').forEach(b => b.onclick = () => {
+      api().DeleteShiftOverride(Number(b.dataset.delOv)).then(render, showError);
     });
   };
   await render();

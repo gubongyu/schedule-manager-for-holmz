@@ -43,6 +43,14 @@ type ShiftRepo interface {
 	List() ([]Shift, error)
 }
 
+// ShiftOverrideRepo 는 날짜별 근무 예외(휴가/대타) 저장소 Port다.
+type ShiftOverrideRepo interface {
+	Create(o *ShiftOverride) error
+	Delete(id int64) error
+	// ListRange 는 기간(YYYY-MM-DD, 양끝 포함)의 예외를 직원 이름과 함께 반환한다.
+	ListRange(from, to string) ([]ShiftOverride, error)
+}
+
 // SettingsRepo 는 앱 설정(키-값) 저장소 Port다. 없는 키는 빈 값을 반환한다.
 type SettingsRepo interface {
 	Get(key string) (string, error)
