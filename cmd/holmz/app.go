@@ -29,6 +29,7 @@ type App struct {
 	player    *service.PlayerService
 	auth      *service.AuthService
 	shifts    *service.ShiftService
+	settings  domain.SettingsRepo
 
 	photosDir     string
 	startupAction string // --action 플래그로 전달된 자동화 동작
@@ -37,10 +38,10 @@ type App struct {
 func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, checklist *service.ChecklistService,
 	sync *service.SyncService, drive domain.DrivePort, schedule *service.ScheduleService,
 	player *service.PlayerService, auth *service.AuthService, shifts *service.ShiftService,
-	photosDir, startupAction string) *App {
+	settings domain.SettingsRepo, photosDir, startupAction string) *App {
 	return &App{employees: employees, worklog: worklog, checklist: checklist,
 		sync: sync, drive: drive, schedule: schedule, player: player, auth: auth, shifts: shifts,
-		photosDir: photosDir, startupAction: startupAction}
+		settings: settings, photosDir: photosDir, startupAction: startupAction}
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -84,51 +85,38 @@ func (a *App) onSecondInstance(args []string) {
 
 // --- 직원 ---
 
-// sanitizeEmployee 는 PIN 해시를 지우고 표시용 HasPIN 만 남긴다.
-func sanitizeEmployee(e *domain.Employee) {
-	e.HasPIN = e.PIN != ""
-	e.PIN = ""
-}
-
 func (a *App) ListEmployees(activeOnly bool) ([]domain.Employee, error) {
-	list, err := a.employees.List(activeOnly)
-	if err != nil {
-		return nil, err
-	}
-	for i := range list {
-		sanitizeEmployee(&list[i])
-	}
-	return list, nil
+	return a.employees.List(activeOnly)
 }
 
-func (a *App) AddEmployee(name, pin string) (*domain.Employee, error) {
-	e := &domain.Employee{Name: name, Active: true}
+func (a *App) AddEmployee(name, studentID, department string) (*domain.Employee, error) {
+	e := &domain.Employee{Name: name, StudentID: studentID, Department: department, Active: true}
 	if err := a.employees.Create(e); err != nil {
 		return nil, err
-	}
-	if pin != "" {
-		if err := a.auth.SetEmployeePIN(e.ID, pin); err != nil {
-			return nil, err
-		}
-		e.HasPIN = true
 	}
 	return e, nil
 }
 
-// UpdateEmployee 는 이름·활성 상태만 갱신한다. PIN 변경은 SetEmployeePIN 으로만 가능하다.
+// UpdateEmployee 는 이름·학번·학과를 갱신한다 (활성 상태는 보존).
 func (a *App) UpdateEmployee(e domain.Employee) error {
 	stored, err := a.employees.Get(e.ID)
 	if err != nil {
 		return err
 	}
 	stored.Name = e.Name
-	stored.Active = e.Active
+	stored.StudentID = e.StudentID
+	stored.Department = e.Department
 	return a.employees.Update(stored)
 }
 
-// SetEmployeePIN 은 직원 PIN을 해시로 저장한다. 빈 값이면 해제.
-func (a *App) SetEmployeePIN(employeeID int64, pin string) error {
-	return a.auth.SetEmployeePIN(employeeID, pin)
+// DeleteEmployee 는 직원을 목록에서 제거한다 (기존 근로기록 보존을 위한 soft-delete).
+func (a *App) DeleteEmployee(id int64) error {
+	stored, err := a.employees.Get(id)
+	if err != nil {
+		return err
+	}
+	stored.Active = false
+	return a.employees.Update(stored)
 }
 
 // --- 근로기록 ---
@@ -243,13 +231,13 @@ func (a *App) PhotoDataURL(path string) (string, error) {
 	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(b), nil
 }
 
-// --- PIN 인증 ---
+// --- 본인 확인 (학번) / 관리자 PIN ---
 
-func (a *App) EmployeeNeedsPIN(employeeID int64) (bool, error) {
-	return a.auth.EmployeeNeedsPIN(employeeID)
+func (a *App) EmployeeNeedsVerify(employeeID int64) (bool, error) {
+	return a.auth.EmployeeNeedsVerify(employeeID)
 }
-func (a *App) VerifyEmployeePIN(employeeID int64, pin string) (bool, error) {
-	return a.auth.VerifyEmployeePIN(employeeID, pin)
+func (a *App) VerifyEmployee(employeeID int64, studentID string) (bool, error) {
+	return a.auth.VerifyEmployee(employeeID, studentID)
 }
 func (a *App) HasAdminPIN() (bool, error) { return a.auth.HasAdminPIN() }
 func (a *App) VerifyAdminPIN(pin string) (bool, error) {
@@ -330,10 +318,49 @@ func (a *App) ShiftWeekTotals() ([]service.EmployeeHours, error) { return a.shif
 func (a *App) ShiftOverrides() ([]domain.ShiftOverride, error) {
 	return a.shifts.UpcomingOverrides()
 }
-func (a *App) AddShiftOverride(employeeID int64, date, typ, start, end, note string) (*domain.ShiftOverride, error) {
-	return a.shifts.AddOverride(employeeID, date, typ, start, end, note)
+func (a *App) AddShiftOverride(employeeID int64, date, typ, start, end, note string, coverEmployeeID int64) (*domain.ShiftOverride, error) {
+	return a.shifts.AddOverride(employeeID, date, typ, start, end, note, coverEmployeeID)
 }
 func (a *App) DeleteShiftOverride(id int64) error { return a.shifts.RemoveOverride(id) }
+
+// --- 앱 설정 (업무 항목 / 공지사항) ---
+
+var defaultTaskOptions = []string{"청소", "재고 정리", "카운터·이용자 응대", "시설 점검", "기타"}
+
+// GetTaskOptions 는 정각 업무 기록에 쓰이는 업무 항목 목록을 반환한다 (미설정 시 기본값).
+func (a *App) GetTaskOptions() ([]string, error) {
+	v, err := a.settings.Get("task_options")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(v) == "" {
+		return defaultTaskOptions, nil
+	}
+	var out []string
+	for _, line := range strings.Split(v, "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out, nil
+}
+
+func (a *App) SetTaskOptions(options []string) error {
+	return a.settings.Set("task_options", strings.Join(options, "\n"))
+}
+
+// GetNotice 는 근무 시작 시 팝업으로 표시되는 공지사항이다.
+func (a *App) GetNotice() (string, error) { return a.settings.Get("notice_text") }
+func (a *App) SetNotice(text string) error {
+	return a.settings.Set("notice_text", text)
+}
+
+// ShowWindow 는 트레이에 숨겨진 창을 표시한다 (정각 알림 등에서 사용).
+func (a *App) ShowWindow() {
+	if a.ctx != nil {
+		runtime.WindowShow(a.ctx)
+	}
+}
 
 // --- 영상 재생 ---
 

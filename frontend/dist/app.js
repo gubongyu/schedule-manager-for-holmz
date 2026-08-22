@@ -48,7 +48,16 @@ async function refreshEmployees() {
   if (prev && employees.some(e => String(e.id) === prev)) sel.value = prev;
 }
 
-// --- PIN 인증 ---
+// --- 공통 모달 ---
+function showModal(html) {
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay';
+  ov.innerHTML = `<div class="modal">${html}</div>`;
+  document.body.appendChild(ov);
+  return ov;
+}
+
+// --- 본인 확인 (학번) / 관리자 PIN ---
 // 세션 동안 검증된 근무자·관리자 상태를 기억한다.
 const verifiedEmployees = new Set();
 let adminVerified = false;
@@ -57,10 +66,10 @@ async function ensureEmployeeVerified() {
   const emp = selectedEmployee();
   if (!emp) { alert('근무자를 선택하세요.'); return null; }
   if (verifiedEmployees.has(emp.id)) return emp;
-  if (!(await api().EmployeeNeedsPIN(emp.id))) { verifiedEmployees.add(emp.id); return emp; }
-  const pin = prompt(`${emp.name} 님의 PIN을 입력하세요.`);
-  if (pin === null) return null;
-  if (!(await api().VerifyEmployeePIN(emp.id, pin))) { alert('PIN이 일치하지 않습니다.'); return null; }
+  if (!(await api().EmployeeNeedsVerify(emp.id))) { verifiedEmployees.add(emp.id); return emp; }
+  const sid = prompt(`${emp.name} 님의 학번을 입력하세요.`);
+  if (sid === null) return null;
+  if (!(await api().VerifyEmployee(emp.id, sid))) { alert('학번이 일치하지 않습니다.'); return null; }
   verifiedEmployees.add(emp.id);
   return emp;
 }
@@ -81,6 +90,58 @@ function showError(err) {
   el.textContent = typeof err === 'string' ? err : (err?.message || String(err));
   $view.appendChild(el);
 }
+
+// --- 공지사항 팝업 (근무 시작 시) ---
+async function showNoticeIfAny() {
+  let text = '';
+  try { text = await api().GetNotice(); } catch (e) { }
+  if (!text || !text.trim()) return;
+  const ov = showModal(`
+    <h3>📢 공지사항</h3>
+    <pre>${esc(text)}</pre>
+    <div class="actions"><button class="small primary" id="notice-ok">확인</button></div>`);
+  ov.querySelector('#notice-ok').onclick = () => ov.remove();
+}
+
+// --- 정각 업무 기록 알림 ---
+// 근무 중(출근 상태)이면 매 정각에 작은 알림을 띄워 해당 시간의 업무를 선택하게 한다.
+let lastHourKey = '';
+
+async function showHourlyTaskModal(emp, hour) {
+  let options = [];
+  try { options = (await api().GetTaskOptions()) || []; } catch (e) { }
+  if (!options.length) return;
+  const hh = String(hour).padStart(2, '0');
+  const ov = showModal(`
+    <h3>🕐 ${hh}:00 업무 기록</h3>
+    <p class="hint" style="margin-bottom:10px">${esc(emp.name)} 님, 지금 하고 있는 업무를 선택하세요.</p>
+    <select id="task-sel" style="width:100%">${options.map(o => `<option>${esc(o)}</option>`).join('')}</select>
+    <div class="actions">
+      <button class="small" id="task-skip">닫기</button>
+      <button class="small primary" id="task-save">기록</button>
+    </div>`);
+  ov.querySelector('#task-skip').onclick = () => ov.remove();
+  ov.querySelector('#task-save').onclick = async () => {
+    if (!(await ensureEmployeeVerified())) return;
+    api().AddNote(emp.id, `[${hh}:00] ${ov.querySelector('#task-sel').value}`)
+      .then(() => { ov.remove(); if (currentView === 'worklog') renderWorklog(); }, showError);
+  };
+}
+
+setInterval(async () => {
+  const now = new Date();
+  if (now.getMinutes() !== 0) return;
+  const key = `${todayStr()}-${now.getHours()}`;
+  if (key === lastHourKey) return;
+  const emp = selectedEmployee();
+  if (!emp) return;
+  let cur = null;
+  try { cur = await api().CurrentShift(emp.id); } catch (e) { return; }
+  if (!cur) return;
+  lastHourKey = key;
+  api().ShowWindow();
+  showHourlyTaskModal(emp, now.getHours());
+}, 20 * 1000);
 
 // --- 화면 렌더러 ---
 
@@ -180,7 +241,12 @@ async function renderWorklog() {
     <div class="card"><h3>내 근로 이력 (최근 30일)</h3><div id="my-history"></div></div>`;
 
   document.getElementById('btn-in').onclick = async () => {
-    if (await ensureEmployeeVerified()) api().ClockIn(emp.id).then(renderWorklog, showError);
+    if (await ensureEmployeeVerified()) {
+      api().ClockIn(emp.id).then(async () => {
+        await showNoticeIfAny();
+        renderWorklog();
+      }, showError);
+    }
   };
   document.getElementById('btn-out').onclick = async () => {
     if (await ensureEmployeeVerified()) api().ClockOut(emp.id).then(renderWorklog, showError);
@@ -333,38 +399,49 @@ async function renderAdminChecklist() {
 
 async function renderAdminEmployees() {
   const render = async () => {
-    const all = (await api().ListEmployees(false)) || [];
+    const all = (await api().ListEmployees(true)) || [];
     $view.innerHTML = `
       <h2>직원 관리</h2>
       <div class="card">
-        <table><tr><th>이름</th><th>PIN</th><th>상태</th><th></th></tr>
-        ${all.map(e => `<tr><td>${esc(e.name)}</td><td>${e.hasPin ? '설정됨' : '없음'}</td>
-          <td>${e.active ? '재직' : '비활성'}</td>
-          <td><button class="small" data-pin="${e.id}">PIN 변경</button>
-              <button class="small" data-toggle="${e.id}">${e.active ? '비활성화' : '활성화'}</button></td></tr>`).join('')}</table>
+        <table><tr><th>이름</th><th>학번</th><th>학과</th><th style="width:130px"></th></tr>
+        ${all.map(e => `<tr data-emp="${e.id}">
+          <td><input type="text" data-f="name" value="${esc(e.name)}" style="width:100%"></td>
+          <td><input type="text" data-f="sid" value="${esc(e.studentId)}" style="width:100%"></td>
+          <td><input type="text" data-f="dept" value="${esc(e.department)}" style="width:100%"></td>
+          <td><button class="small primary" data-save="${e.id}">저장</button>
+              <button class="small" data-del="${e.id}">삭제</button></td></tr>`).join('')}</table>
         <div class="row" style="margin-top:10px">
           <input type="text" id="emp-name" placeholder="이름">
-          <input type="password" id="emp-pin" placeholder="PIN (선택)">
+          <input type="text" id="emp-sid" placeholder="학번">
+          <input type="text" id="emp-dept" placeholder="학과">
           <button id="emp-add" class="small primary">직원 추가</button>
         </div>
+        <p class="hint" style="margin-top:8px">학번은 출퇴근·체크리스트 작성 시 본인 확인에 사용됩니다.</p>
       </div>`;
     document.getElementById('emp-add').onclick = () => {
       const name = document.getElementById('emp-name').value.trim();
-      if (!name) return;
-      api().AddEmployee(name, document.getElementById('emp-pin').value)
+      if (!name) { alert('이름을 입력하세요.'); return; }
+      api().AddEmployee(name,
+        document.getElementById('emp-sid').value.trim(),
+        document.getElementById('emp-dept').value.trim())
         .then(async () => { await refreshEmployees(); await render(); }, showError);
     };
-    $view.querySelectorAll('[data-toggle]').forEach(b => b.onclick = () => {
-      const e = all.find(x => x.id === Number(b.dataset.toggle));
-      e.active = !e.active;
-      api().UpdateEmployee(e).then(async () => { await refreshEmployees(); await render(); }, showError);
+    $view.querySelectorAll('[data-save]').forEach(b => b.onclick = () => {
+      const row = b.closest('tr');
+      const id = Number(row.dataset.emp);
+      verifiedEmployees.delete(id);
+      api().UpdateEmployee({
+        id,
+        name: row.querySelector('[data-f=name]').value.trim(),
+        studentId: row.querySelector('[data-f=sid]').value.trim(),
+        department: row.querySelector('[data-f=dept]').value.trim(),
+        active: true,
+      }).then(async () => { await refreshEmployees(); await render(); }, showError);
     });
-    $view.querySelectorAll('[data-pin]').forEach(b => b.onclick = () => {
-      const e = all.find(x => x.id === Number(b.dataset.pin));
-      const pin = prompt(`${e.name} 님의 새 PIN을 입력하세요. (비우면 PIN 해제)`);
-      if (pin === null) return;
-      verifiedEmployees.delete(e.id);
-      api().SetEmployeePIN(e.id, pin).then(render, showError);
+    $view.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+      if (!confirm('이 직원을 목록에서 삭제할까요? (기존 근로기록은 보존됩니다)')) return;
+      api().DeleteEmployee(Number(b.dataset.del))
+        .then(async () => { await refreshEmployees(); await render(); }, showError);
     });
   };
   await render();
@@ -397,6 +474,12 @@ const DAY_LABELS = { MON: '월', TUE: '화', WED: '수', THU: '목', FRI: '금',
 
 const todayWeekday = () => ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'][new Date().getDay()];
 
+// 정시 단위(00~23시) 시간 선택 옵션
+const hourOptions = (selected) => Array.from({ length: 24 }, (_, h) => {
+  const v = `${String(h).padStart(2, '0')}:00`;
+  return `<option value="${v}" ${v === selected ? 'selected' : ''}>${h}시</option>`;
+}).join('');
+
 async function renderAdminShifts() {
   const render = async () => {
     const [week, emps, totals, overrides] = await Promise.all([
@@ -423,12 +506,12 @@ async function renderAdminShifts() {
           <select id="sh-emp">${emps.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
           <span id="sh-days">${Object.entries(DAY_LABELS).map(([v, l]) =>
             `<label style="margin-right:4px"><input type="checkbox" value="${v}">${l}</label>`).join('')}</span>
-          <input type="text" id="sh-start" placeholder="09:00" style="width:80px">
+          <select id="sh-start">${hourOptions('09:00')}</select>
           <span class="hint">–</span>
-          <input type="text" id="sh-end" placeholder="18:00" style="width:80px">
+          <select id="sh-end">${hourOptions('18:00')}</select>
           <button id="sh-add" class="small primary">추가</button>
         </div>
-        <p class="hint" style="margin-top:8px">요일을 여러 개 선택하면 같은 시간으로 한 번에 등록됩니다.</p>
+        <p class="hint" style="margin-top:8px">시간은 정시 단위로 지정합니다. 요일을 여러 개 선택하면 같은 시간으로 한 번에 등록됩니다.</p>
       </div>
       <div class="card">
         <div class="card-head"><h3>이번 주 직원별 배치 시간</h3><span class="hint">휴가·대타 반영</span></div>
@@ -440,26 +523,37 @@ async function renderAdminShifts() {
           </div>`).join('') : '<p class="hint">배치가 없습니다.</p>'}
       </div>
       <div class="card">
-        <div class="card-head"><h3>예외 (휴가 · 대타)</h3><span class="hint">향후 90일</span></div>
+        <div class="card-head"><h3>예외 (휴가 · 대타 · 추가 근무)</h3><span class="hint">향후 90일</span></div>
         ${overrides.length ? `<table style="margin-bottom:12px">
-          <tr><th>날짜</th><th>직원</th><th>유형</th><th>시간</th><th>메모</th><th></th></tr>
+          <tr><th>날짜</th><th>내용</th><th>유형</th><th>시간</th><th>메모</th><th></th></tr>
           ${overrides.map(o => `<tr>
-            <td class="mono">${o.date}</td><td>${esc(o.employeeName)}</td>
-            <td>${o.type === 'off' ? '<span class="pill warn">휴가</span>' : '<span class="pill acc">대타</span>'}</td>
-            <td class="mono">${o.type === 'work' ? `${o.start}–${o.end}` : '—'}</td>
+            <td class="mono">${o.date}</td>
+            <td>${esc(o.employeeName)}${o.type === 'sub' ? ` → <b>${esc(o.coverName)}</b>` : ''}</td>
+            <td>${o.type === 'off' ? '<span class="pill warn">휴가</span>'
+              : o.type === 'sub' ? '<span class="pill acc">대타</span>'
+              : '<span class="pill neu">추가</span>'}</td>
+            <td class="mono">${o.type === 'off' ? '—' : `${o.start}–${o.end}`}</td>
             <td class="hint">${esc(o.note)}</td>
             <td><button class="small" data-del-ov="${o.id}">삭제</button></td></tr>`).join('')}</table>`
         : '<p class="hint" style="margin-bottom:12px">등록된 예외가 없습니다.</p>'}
         <div class="row">
           <input type="date" id="ov-date" value="${todayStr()}">
-          <select id="ov-emp">${emps.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
-          <select id="ov-type"><option value="off">휴가 (해당일 근무 제외)</option><option value="work">대타/추가 근무</option></select>
-          <input type="text" id="ov-start" placeholder="10:00" style="width:80px" disabled>
+          <select id="ov-emp" title="대상 직원">${emps.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+          <select id="ov-type">
+            <option value="off">휴가 (해당일 근무 제외)</option>
+            <option value="sub">대타 (근무 변경)</option>
+            <option value="work">추가 근무</option>
+          </select>
+          <span id="ov-cover-wrap" style="display:none">→
+            <select id="ov-cover" title="대신 근무할 직원">${emps.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+          </span>
+          <select id="ov-start" disabled>${hourOptions('10:00')}</select>
           <span class="hint">–</span>
-          <input type="text" id="ov-end" placeholder="16:00" style="width:80px" disabled>
+          <select id="ov-end" disabled>${hourOptions('16:00')}</select>
           <input type="text" id="ov-note" placeholder="메모 (선택)" style="flex:1">
           <button id="ov-add" class="small primary">추가</button>
         </div>
+        <p class="hint" style="margin-top:8px">대타: 해당 시간 구간을 다른 직원이 대신 근무합니다 (원래 근무자의 나머지 시간은 유지).</p>
       </div>`;
     document.getElementById('sh-add').onclick = async () => {
       const empId = Number(document.getElementById('sh-emp').value || 0);
@@ -477,9 +571,11 @@ async function renderAdminShifts() {
     });
     const ovType = document.getElementById('ov-type');
     const syncOvTimeInputs = () => {
-      const isWork = ovType.value === 'work';
-      document.getElementById('ov-start').disabled = !isWork;
-      document.getElementById('ov-end').disabled = !isWork;
+      const needsTime = ovType.value !== 'off';
+      document.getElementById('ov-start').disabled = !needsTime;
+      document.getElementById('ov-end').disabled = !needsTime;
+      document.getElementById('ov-cover-wrap').style.display =
+        ovType.value === 'sub' ? 'inline-flex' : 'none';
     };
     ovType.onchange = syncOvTimeInputs;
     document.getElementById('ov-add').onclick = () => {
@@ -487,9 +583,10 @@ async function renderAdminShifts() {
         Number(document.getElementById('ov-emp').value || 0),
         document.getElementById('ov-date').value,
         ovType.value,
-        document.getElementById('ov-start').value.trim(),
-        document.getElementById('ov-end').value.trim(),
+        document.getElementById('ov-start').value,
+        document.getElementById('ov-end').value,
         document.getElementById('ov-note').value.trim(),
+        ovType.value === 'sub' ? Number(document.getElementById('ov-cover').value || 0) : 0,
       ).then(render, showError);
     };
     $view.querySelectorAll('[data-del-ov]').forEach(b => b.onclick = () => {
@@ -628,7 +725,8 @@ async function renderAdminPlayer() {
 }
 
 async function renderAdminSettings() {
-  const authorized = await api().GoogleAuthorized();
+  const [authorized, notice, taskOptions] = await Promise.all([
+    api().GoogleAuthorized(), api().GetNotice(), api().GetTaskOptions()]);
   $view.innerHTML = `
     <h2>설정 — Google 연동</h2>
     <div class="card">
@@ -659,7 +757,32 @@ async function renderAdminSettings() {
         <button id="pin-save" class="small primary">저장</button>
       </div>
       <div id="pin-result"></div>
+    </div>
+    <div class="card">
+      <h3>공지사항</h3>
+      <p class="hint" style="margin:8px 0">근무자가 출근 버튼을 누르면 팝업으로 표시됩니다. 비워두면 표시되지 않습니다.</p>
+      <textarea id="notice-text" rows="4">${esc(notice || '')}</textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="notice-save" class="small primary">공지 저장</button><span id="notice-result" class="hint"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h3>업무 항목 (정각 기록용)</h3>
+      <p class="hint" style="margin:8px 0">근무 중 매 정각 알림에서 선택하는 업무 목록입니다. 한 줄에 하나씩 입력하세요.</p>
+      <textarea id="tasks-text" rows="5">${esc((taskOptions || []).join('\n'))}</textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="tasks-save" class="small primary">업무 항목 저장</button><span id="tasks-result" class="hint"></span>
+      </div>
     </div>`;
+  document.getElementById('notice-save').onclick = () => {
+    api().SetNotice(document.getElementById('notice-text').value)
+      .then(() => { document.getElementById('notice-result').textContent = '✅ 저장됨'; }, showError);
+  };
+  document.getElementById('tasks-save').onclick = () => {
+    const lines = document.getElementById('tasks-text').value.split('\n').map(s => s.trim()).filter(Boolean);
+    api().SetTaskOptions(lines)
+      .then(() => { document.getElementById('tasks-result').textContent = '✅ 저장됨'; }, showError);
+  };
   document.getElementById('pin-save').onclick = () => {
     api().SetAdminPIN(document.getElementById('pin-cur').value, document.getElementById('pin-new').value)
       .then(() => {

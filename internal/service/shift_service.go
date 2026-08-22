@@ -120,8 +120,9 @@ func (s *ShiftService) Week() ([]DayShifts, error) {
 
 // --- 날짜별 예외 (휴가·대타) ---
 
-// AddOverride 는 특정 날짜의 휴가(off) 또는 대타/추가 근무(work)를 등록한다.
-func (s *ShiftService) AddOverride(employeeID int64, date, typ, start, end, note string) (*domain.ShiftOverride, error) {
+// AddOverride 는 특정 날짜의 휴가(off), 추가 근무(work), 대타/근무 변경(sub)을 등록한다.
+// sub 는 coverEmployeeID(대신 근무하는 직원)와 시간 구간이 필수다.
+func (s *ShiftService) AddOverride(employeeID int64, date, typ, start, end, note string, coverEmployeeID int64) (*domain.ShiftOverride, error) {
 	if !dateRe.MatchString(date) {
 		return nil, fmt.Errorf("날짜는 YYYY-MM-DD 형식으로 입력하세요")
 	}
@@ -130,15 +131,27 @@ func (s *ShiftService) AddOverride(employeeID int64, date, typ, start, end, note
 	}
 	switch typ {
 	case domain.OverrideOff:
-		start, end = "", ""
+		start, end, coverEmployeeID = "", "", 0
 	case domain.OverrideWork:
+		coverEmployeeID = 0
 		if err := validTime(start, end); err != nil {
 			return nil, err
+		}
+	case domain.OverrideSub:
+		if err := validTime(start, end); err != nil {
+			return nil, err
+		}
+		if coverEmployeeID == 0 {
+			return nil, fmt.Errorf("대신 근무할 직원을 선택하세요")
+		}
+		if coverEmployeeID == employeeID {
+			return nil, fmt.Errorf("본인이 본인을 대신할 수 없습니다")
 		}
 	default:
 		return nil, fmt.Errorf("잘못된 예외 유형입니다: %s", typ)
 	}
-	o := &domain.ShiftOverride{Date: date, EmployeeID: employeeID, Type: typ, Start: start, End: end, Note: note}
+	o := &domain.ShiftOverride{Date: date, EmployeeID: employeeID, Type: typ,
+		Start: start, End: end, CoverEmployeeID: coverEmployeeID, Note: note}
 	if err := s.overrides.Create(o); err != nil {
 		return nil, err
 	}
@@ -192,6 +205,25 @@ func (s *ShiftService) Roster(date string) (*DayRoster, error) {
 				EmployeeID: sh.EmployeeID, EmployeeName: sh.EmployeeName, Start: sh.Start, End: sh.End})
 		}
 	}
+	// 대타(sub): 원래 직원의 배치에서 해당 시간 구간을 빼고, 대체 직원을 그 구간에 넣는다.
+	for _, o := range ovs {
+		if o.Type != domain.OverrideSub {
+			continue
+		}
+		var next []RosterEntry
+		for _, e := range roster.Entries {
+			if e.EmployeeID == o.EmployeeID && !e.Cover {
+				next = append(next, subtractInterval(e, o.Start, o.End)...)
+			} else {
+				next = append(next, e)
+			}
+		}
+		roster.Entries = next
+		if !offIDs[o.CoverEmployeeID] {
+			roster.Entries = append(roster.Entries, RosterEntry{
+				EmployeeID: o.CoverEmployeeID, EmployeeName: o.CoverName, Start: o.Start, End: o.End, Cover: true})
+		}
+	}
 	for _, o := range ovs {
 		if o.Type == domain.OverrideWork && !offIDs[o.EmployeeID] {
 			roster.Entries = append(roster.Entries, RosterEntry{
@@ -200,6 +232,25 @@ func (s *ShiftService) Roster(date string) (*DayRoster, error) {
 	}
 	sort.SliceStable(roster.Entries, func(i, j int) bool { return roster.Entries[i].Start < roster.Entries[j].Start })
 	return roster, nil
+}
+
+// subtractInterval 은 배치 e 에서 [subStart, subEnd) 구간을 뺀 나머지 조각(0~2개)을 반환한다.
+func subtractInterval(e RosterEntry, subStart, subEnd string) []RosterEntry {
+	if subEnd <= e.Start || subStart >= e.End {
+		return []RosterEntry{e} // 겹치지 않음
+	}
+	var out []RosterEntry
+	if e.Start < subStart {
+		left := e
+		left.End = subStart
+		out = append(out, left)
+	}
+	if subEnd < e.End {
+		right := e
+		right.Start = subEnd
+		out = append(out, right)
+	}
+	return out
 }
 
 // weekDates 는 오늘이 속한 주의 월~일 날짜 7개를 반환한다.

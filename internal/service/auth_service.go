@@ -10,9 +10,9 @@ import (
 
 const adminPINKey = "admin_pin"
 
-// AuthService 는 근무자 PIN 확인과 관리자 메뉴 잠금을 담당한다 (기획서 9장: 다중 사용자 구분).
-// PIN은 bcrypt 해시로 저장한다. 구버전의 평문 PIN은 검증 성공 시 자동으로 해시로 승격된다.
-// PIN이 비어 있는 직원·미설정 관리자 잠금은 검증 없이 통과한다.
+// AuthService 는 근무자 본인 확인(학번)과 관리자 메뉴 잠금(PIN)을 담당한다.
+// 학번은 관리자 화면에 표시되어야 하는 식별 정보라 평문 비교하고,
+// 관리자 PIN은 bcrypt 해시로 저장한다 (구버전 평문은 검증 성공 시 자동 승격).
 type AuthService struct {
 	employees domain.EmployeeRepo
 	settings  domain.SettingsRepo
@@ -35,50 +35,24 @@ func pinMatches(stored, pin string) (ok, legacy bool) {
 	return stored == pin, true
 }
 
-// --- 근무자 PIN ---
+// --- 근무자 본인 확인 (학번) ---
 
-// SetEmployeePIN 은 직원 PIN을 해시로 저장한다. 빈 값이면 PIN 해제.
-func (s *AuthService) SetEmployeePIN(employeeID int64, pin string) error {
-	e, err := s.employees.Get(employeeID)
-	if err != nil {
-		return err
-	}
-	if pin == "" {
-		e.PIN = ""
-	} else {
-		if e.PIN, err = hashPIN(pin); err != nil {
-			return err
-		}
-	}
-	return s.employees.Update(e)
-}
-
-// EmployeeNeedsPIN 은 해당 직원 선택 시 PIN 입력이 필요한지 알려준다.
-func (s *AuthService) EmployeeNeedsPIN(employeeID int64) (bool, error) {
+// EmployeeNeedsVerify 는 해당 직원 선택 시 학번 입력이 필요한지 알려준다 (학번 미등록 직원은 통과).
+func (s *AuthService) EmployeeNeedsVerify(employeeID int64) (bool, error) {
 	e, err := s.employees.Get(employeeID)
 	if err != nil {
 		return false, err
 	}
-	return e.PIN != "", nil
+	return e.StudentID != "", nil
 }
 
-func (s *AuthService) VerifyEmployeePIN(employeeID int64, pin string) (bool, error) {
+// VerifyEmployee 는 입력한 학번이 등록된 학번과 일치하는지 확인한다.
+func (s *AuthService) VerifyEmployee(employeeID int64, studentID string) (bool, error) {
 	e, err := s.employees.Get(employeeID)
 	if err != nil {
 		return false, err
 	}
-	if e.PIN == "" {
-		return true, nil
-	}
-	ok, legacy := pinMatches(e.PIN, pin)
-	if ok && legacy {
-		// 평문 저장분을 해시로 승격 (실패해도 검증 결과에는 영향 없음)
-		if h, err := hashPIN(pin); err == nil {
-			e.PIN = h
-			_ = s.employees.Update(e)
-		}
-	}
-	return ok, nil
+	return e.StudentID == "" || e.StudentID == strings.TrimSpace(studentID), nil
 }
 
 // --- 관리자 PIN ---

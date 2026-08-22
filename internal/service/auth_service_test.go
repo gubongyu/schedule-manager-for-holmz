@@ -9,7 +9,7 @@ import (
 	"holmz/internal/repository/sqlite"
 )
 
-func setupAuth(t *testing.T) (*AuthService, *sqlite.EmployeeRepo, *domain.Employee, *domain.Employee) {
+func setupAuth(t *testing.T) (*AuthService, *sqlite.SettingsRepo, *domain.Employee, *domain.Employee) {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -17,87 +17,51 @@ func setupAuth(t *testing.T) (*AuthService, *sqlite.EmployeeRepo, *domain.Employ
 	}
 	t.Cleanup(func() { db.Close() })
 	emps := sqlite.NewEmployeeRepo(db)
-	withPin := &domain.Employee{Name: "김철수", Active: true}
-	noPin := &domain.Employee{Name: "이영희", Active: true}
-	for _, e := range []*domain.Employee{withPin, noPin} {
+	withID := &domain.Employee{Name: "김철수", StudentID: "20261234", Department: "컴공", Active: true}
+	noID := &domain.Employee{Name: "이영희", Active: true}
+	for _, e := range []*domain.Employee{withID, noID} {
 		if err := emps.Create(e); err != nil {
 			t.Fatal(err)
 		}
 	}
-	svc := NewAuthService(emps, sqlite.NewSettingsRepo(db))
-	if err := svc.SetEmployeePIN(withPin.ID, "1234"); err != nil {
-		t.Fatal(err)
-	}
-	return svc, emps, withPin, noPin
+	settings := sqlite.NewSettingsRepo(db)
+	return NewAuthService(emps, settings), settings, withID, noID
 }
 
-func TestEmployeePINStoredHashed(t *testing.T) {
-	_, emps, withPin, _ := setupAuth(t)
-	stored, err := emps.Get(withPin.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if stored.PIN == "1234" || !strings.HasPrefix(stored.PIN, "$2") {
-		t.Errorf("PIN stored as %q, want bcrypt hash", stored.PIN)
-	}
-}
+func TestVerifyEmployeeByStudentID(t *testing.T) {
+	svc, _, withID, noID := setupAuth(t)
 
-func TestLegacyPlaintextPINUpgradedOnVerify(t *testing.T) {
-	svc, emps, _, noPin := setupAuth(t)
-	// 기존 배포본의 평문 PIN을 흉내낸다
-	noPin.PIN = "5678"
-	if err := emps.Update(noPin); err != nil {
-		t.Fatal(err)
+	if ok, err := svc.VerifyEmployee(withID.ID, "20261234"); err != nil || !ok {
+		t.Errorf("correct studentID = %v, %v; want true", ok, err)
 	}
-	if ok, err := svc.VerifyEmployeePIN(noPin.ID, "5678"); err != nil || !ok {
-		t.Fatalf("legacy PIN verify = %v, %v; want true", ok, err)
+	// 공백은 허용 (실수 방지)
+	if ok, _ := svc.VerifyEmployee(withID.ID, " 20261234 "); !ok {
+		t.Error("trimmed studentID should pass")
 	}
-	stored, _ := emps.Get(noPin.ID)
-	if !strings.HasPrefix(stored.PIN, "$2") {
-		t.Errorf("legacy PIN not upgraded to hash: %q", stored.PIN)
+	if ok, _ := svc.VerifyEmployee(withID.ID, "99999999"); ok {
+		t.Error("wrong studentID accepted")
 	}
-	// 승격 후에도 같은 PIN으로 검증 가능
-	if ok, _ := svc.VerifyEmployeePIN(noPin.ID, "5678"); !ok {
-		t.Error("PIN verify after upgrade failed")
+	// 학번 미등록 직원은 검증 없이 통과
+	if ok, _ := svc.VerifyEmployee(noID.ID, ""); !ok {
+		t.Error("employee without studentID should pass")
 	}
-}
-
-func TestVerifyEmployeePIN(t *testing.T) {
-	svc, _, withPin, noPin := setupAuth(t)
-
-	if ok, err := svc.VerifyEmployeePIN(withPin.ID, "1234"); err != nil || !ok {
-		t.Errorf("correct PIN = %v, %v; want true", ok, err)
-	}
-	if ok, _ := svc.VerifyEmployeePIN(withPin.ID, "0000"); ok {
-		t.Error("wrong PIN accepted")
-	}
-	// PIN 미설정 직원은 검증 없이 통과
-	if ok, _ := svc.VerifyEmployeePIN(noPin.ID, ""); !ok {
-		t.Error("employee without PIN should pass")
-	}
-	if _, err := svc.VerifyEmployeePIN(999, "1234"); err == nil {
+	if _, err := svc.VerifyEmployee(999, "x"); err == nil {
 		t.Error("unknown employee should error")
 	}
 }
 
-func TestEmployeeNeedsPIN(t *testing.T) {
-	svc, _, withPin, noPin := setupAuth(t)
-	if need, _ := svc.EmployeeNeedsPIN(withPin.ID); !need {
-		t.Error("employee with PIN should need verification")
+func TestEmployeeNeedsVerify(t *testing.T) {
+	svc, _, withID, noID := setupAuth(t)
+	if need, _ := svc.EmployeeNeedsVerify(withID.ID); !need {
+		t.Error("employee with studentID should need verification")
 	}
-	if need, _ := svc.EmployeeNeedsPIN(noPin.ID); need {
-		t.Error("employee without PIN should not need verification")
+	if need, _ := svc.EmployeeNeedsVerify(noID.ID); need {
+		t.Error("employee without studentID should not need verification")
 	}
 }
 
 func TestAdminPINStoredHashed(t *testing.T) {
-	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { db.Close() })
-	settings := sqlite.NewSettingsRepo(db)
-	svc := NewAuthService(sqlite.NewEmployeeRepo(db), settings)
+	svc, settings, _, _ := setupAuth(t)
 
 	if err := svc.SetAdminPIN("9999"); err != nil {
 		t.Fatal(err)

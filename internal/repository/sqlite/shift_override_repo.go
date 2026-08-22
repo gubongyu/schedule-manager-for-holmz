@@ -8,8 +8,8 @@ func NewShiftOverrideRepo(db *DB) *ShiftOverrideRepo { return &ShiftOverrideRepo
 
 func (r *ShiftOverrideRepo) Create(o *domain.ShiftOverride) error {
 	res, err := r.db.SQL.Exec(
-		"INSERT INTO shift_overrides (date, employee_id, type, start_time, end_time, note) VALUES (?,?,?,?,?,?)",
-		o.Date, o.EmployeeID, o.Type, o.Start, o.End, o.Note)
+		"INSERT INTO shift_overrides (date, employee_id, type, start_time, end_time, cover_employee_id, note) VALUES (?,?,?,?,?,?,?)",
+		o.Date, o.EmployeeID, o.Type, o.Start, o.End, o.CoverEmployeeID, o.Note)
 	if err != nil {
 		return err
 	}
@@ -24,8 +24,11 @@ func (r *ShiftOverrideRepo) Delete(id int64) error {
 
 func (r *ShiftOverrideRepo) ListRange(from, to string) ([]domain.ShiftOverride, error) {
 	rows, err := r.db.SQL.Query(`
-		SELECT o.id, o.date, o.employee_id, e.name, o.type, o.start_time, o.end_time, o.note
-		FROM shift_overrides o JOIN employees e ON e.id = o.employee_id
+		SELECT o.id, o.date, o.employee_id, e.name, o.type, o.start_time, o.end_time,
+		       o.cover_employee_id, COALESCE(c.name, ''), o.note
+		FROM shift_overrides o
+		JOIN employees e ON e.id = o.employee_id
+		LEFT JOIN employees c ON c.id = o.cover_employee_id
 		WHERE o.date >= ? AND o.date <= ?
 		ORDER BY o.date, o.start_time, e.name`, from, to)
 	if err != nil {
@@ -35,7 +38,8 @@ func (r *ShiftOverrideRepo) ListRange(from, to string) ([]domain.ShiftOverride, 
 	var out []domain.ShiftOverride
 	for rows.Next() {
 		var o domain.ShiftOverride
-		if err := rows.Scan(&o.ID, &o.Date, &o.EmployeeID, &o.EmployeeName, &o.Type, &o.Start, &o.End, &o.Note); err != nil {
+		if err := rows.Scan(&o.ID, &o.Date, &o.EmployeeID, &o.EmployeeName, &o.Type, &o.Start, &o.End,
+			&o.CoverEmployeeID, &o.CoverName, &o.Note); err != nil {
 			return nil, err
 		}
 		out = append(out, o)

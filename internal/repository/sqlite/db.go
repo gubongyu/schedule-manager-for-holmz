@@ -16,6 +16,8 @@ CREATE TABLE IF NOT EXISTS employees (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL,
 	pin TEXT NOT NULL DEFAULT '',
+	student_id TEXT NOT NULL DEFAULT '',
+	department TEXT NOT NULL DEFAULT '',
 	active INTEGER NOT NULL DEFAULT 1
 );
 CREATE TABLE IF NOT EXISTS work_logs (
@@ -78,9 +80,10 @@ CREATE TABLE IF NOT EXISTS shift_overrides (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	date TEXT NOT NULL,
 	employee_id INTEGER NOT NULL REFERENCES employees(id),
-	type TEXT NOT NULL CHECK (type IN ('off','work')),
+	type TEXT NOT NULL CHECK (type IN ('off','work','sub')),
 	start_time TEXT NOT NULL DEFAULT '',
 	end_time TEXT NOT NULL DEFAULT '',
+	cover_employee_id INTEGER NOT NULL DEFAULT 0,
 	note TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_shift_overrides_date ON shift_overrides(date);
@@ -112,7 +115,35 @@ func Open(path string) (*DB, error) {
 	// 구버전 DB 마이그레이션: 이미 있는 컬럼이면 duplicate column 에러가 나므로 무시한다.
 	_, _ = sqlDB.Exec(`ALTER TABLE schedules ADD COLUMN payload TEXT NOT NULL DEFAULT ''`)
 	_, _ = sqlDB.Exec(`ALTER TABLE schedules ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 1`)
+	_, _ = sqlDB.Exec(`ALTER TABLE employees ADD COLUMN student_id TEXT NOT NULL DEFAULT ''`)
+	_, _ = sqlDB.Exec(`ALTER TABLE employees ADD COLUMN department TEXT NOT NULL DEFAULT ''`)
+	migrateShiftOverrides(sqlDB)
 	return &DB{SQL: sqlDB}, nil
+}
+
+// migrateShiftOverrides 는 구버전 shift_overrides 의 CHECK 제약이 'sub' 유형을 막는 경우
+// 테이블을 재생성해 데이터를 보존한 채 제약과 cover_employee_id 컬럼을 갱신한다.
+func migrateShiftOverrides(sqlDB *sql.DB) {
+	if _, err := sqlDB.Exec(
+		`INSERT INTO shift_overrides (date, employee_id, type) VALUES ('_probe_', 0, 'sub')`); err == nil {
+		_, _ = sqlDB.Exec(`DELETE FROM shift_overrides WHERE date='_probe_'`)
+		return
+	}
+	_, _ = sqlDB.Exec(`ALTER TABLE shift_overrides RENAME TO shift_overrides_old`)
+	_, _ = sqlDB.Exec(`CREATE TABLE shift_overrides (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		date TEXT NOT NULL,
+		employee_id INTEGER NOT NULL REFERENCES employees(id),
+		type TEXT NOT NULL CHECK (type IN ('off','work','sub')),
+		start_time TEXT NOT NULL DEFAULT '',
+		end_time TEXT NOT NULL DEFAULT '',
+		cover_employee_id INTEGER NOT NULL DEFAULT 0,
+		note TEXT NOT NULL DEFAULT ''
+	)`)
+	_, _ = sqlDB.Exec(`INSERT INTO shift_overrides (id, date, employee_id, type, start_time, end_time, note)
+		SELECT id, date, employee_id, type, start_time, end_time, note FROM shift_overrides_old`)
+	_, _ = sqlDB.Exec(`DROP TABLE shift_overrides_old`)
+	_, _ = sqlDB.Exec(`CREATE INDEX IF NOT EXISTS idx_shift_overrides_date ON shift_overrides(date)`)
 }
 
 func (d *DB) Close() error { return d.SQL.Close() }

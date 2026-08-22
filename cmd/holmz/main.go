@@ -44,6 +44,7 @@ func main() {
 	defer db.Close()
 
 	employeeRepo := sqlite.NewEmployeeRepo(db)
+	settingsRepo := sqlite.NewSettingsRepo(db)
 	worklogRepo := sqlite.NewWorkLogRepo(db)
 	checklistRepo := sqlite.NewChecklistRepo(db)
 	checklistSvc := service.NewChecklistService(checklistRepo, nil)
@@ -120,8 +121,9 @@ func main() {
 		service.NewScheduleService(sqlite.NewScheduleRepo(db), scheduler.New(exePath, nil),
 			filepath.Join(cfgDir, "announce")),
 		playerSvc,
-		service.NewAuthService(employeeRepo, sqlite.NewSettingsRepo(db)),
+		service.NewAuthService(employeeRepo, settingsRepo),
 		service.NewShiftService(sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db), nil),
+		settingsRepo,
 		filepath.Join(cfgDir, "photos"),
 		*action,
 	)
