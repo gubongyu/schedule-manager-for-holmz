@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"time"
 
 	"holmz/internal/domain"
 )
@@ -24,6 +25,11 @@ type Server struct {
 
 	mu      sync.Mutex
 	clients map[chan string]struct{}
+
+	// onEmpty 는 마지막 재생 페이지 연결이 끊기고 emptyDelay 가 지나도 재접속이 없을 때
+	// 호출된다 (창이 닫히거나 죽은 상황 — 프로세스 상태보다 신뢰할 수 있는 신호다).
+	onEmpty    func()
+	emptyDelay time.Duration
 }
 
 // StartServer 는 127.0.0.1의 임의 포트에서 재생 페이지 서버를 시작한다.
@@ -33,8 +39,9 @@ func StartServer(player PlayerControl) (*Server, error) {
 		return nil, err
 	}
 	s := &Server{player: player, ln: ln,
-		base:    "http://" + ln.Addr().String(),
-		clients: map[chan string]struct{}{}}
+		base:       "http://" + ln.Addr().String(),
+		clients:    map[chan string]struct{}{},
+		emptyDelay: 8 * time.Second}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/player", s.handlePage)
 	mux.HandleFunc("/api/playlist", s.handlePlaylist)
@@ -46,6 +53,21 @@ func StartServer(player PlayerControl) (*Server, error) {
 
 func (s *Server) PlayerURL() string { return s.base + "/player" }
 func (s *Server) Close()            { s.ln.Close() }
+
+// ClientCount 는 현재 접속 중인 재생 페이지 수다.
+func (s *Server) ClientCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.clients)
+}
+
+// SetOnClientsGone 은 재생 페이지 연결이 모두 끊겼을 때의 콜백을 등록한다.
+// 페이지 새로고침으로 인한 순간 단절은 emptyDelay 유예로 걸러진다.
+func (s *Server) SetOnClientsGone(f func()) {
+	s.mu.Lock()
+	s.onEmpty = f
+	s.mu.Unlock()
+}
 
 // Broadcast 는 접속 중인 재생 페이지에 명령("reload"/"stop")을 보낸다.
 func (s *Server) Broadcast(cmd string) {
@@ -106,7 +128,18 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	defer func() {
 		s.mu.Lock()
 		delete(s.clients, ch)
+		empty := len(s.clients) == 0
+		onEmpty := s.onEmpty
+		delay := s.emptyDelay
 		s.mu.Unlock()
+		if empty && onEmpty != nil {
+			go func() {
+				time.Sleep(delay)
+				if s.ClientCount() == 0 {
+					onEmpty()
+				}
+			}()
+		}
 	}()
 
 	flusher.Flush()

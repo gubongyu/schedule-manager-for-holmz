@@ -52,9 +52,9 @@ window.onYouTubeIframeAPIReady = function () {
   s.onerror = () => hb('error');
   document.head.appendChild(s);
 })();
-setInterval(() => {
-  if (player && player.getPlayerState && window.YT && player.getPlayerState() === YT.PlayerState.PLAYING) hb('playing');
-}, 10000);
+// 페이지가 살아 있는 한 상태와 무관하게 신호를 보낸다.
+// 일시정지·버퍼링 중을 "죽은 것"으로 오판해 강제 재로드하는 일을 막는다.
+setInterval(() => { if (player) hb('playing'); }, 10000);
 const es = new EventSource('/api/events');
 es.onmessage = ev => {
   if (ev.data === 'reload') location.reload();

@@ -81,6 +81,40 @@ func TestServerHeartbeatFeedsWatchdog(t *testing.T) {
 	}
 }
 
+func TestClientCountAndDisconnectCallback(t *testing.T) {
+	srv, _, _ := setupServer(t)
+	srv.emptyDelay = 100 * time.Millisecond // 테스트용 짧은 유예
+
+	gone := make(chan struct{}, 1)
+	srv.SetOnClientsGone(func() { gone <- struct{}{} })
+
+	if srv.ClientCount() != 0 {
+		t.Fatalf("initial ClientCount = %d, want 0", srv.ClientCount())
+	}
+
+	// SSE 접속 → count 1
+	req, _ := http.NewRequest("GET", srv.base+"/api/events", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if srv.ClientCount() != 1 {
+		t.Fatalf("ClientCount after connect = %d, want 1", srv.ClientCount())
+	}
+
+	// 접속 종료 → 유예 후 콜백
+	resp.Body.Close()
+	select {
+	case <-gone:
+	case <-time.After(3 * time.Second):
+		t.Fatal("OnClientsGone not called after disconnect")
+	}
+	if srv.ClientCount() != 0 {
+		t.Errorf("ClientCount after disconnect = %d, want 0", srv.ClientCount())
+	}
+}
+
 func TestServerBroadcastSSE(t *testing.T) {
 	srv, _, _ := setupServer(t)
 

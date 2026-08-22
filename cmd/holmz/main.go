@@ -79,10 +79,15 @@ func main() {
 			popupSrv.Broadcast("stop")
 			launcher.Kill()
 		case "player:reload":
-			if launcher.Running() {
+			// 프로세스 생존 여부는 신뢰할 수 없다 (Edge는 창이 닫혀도 백그라운드 프로세스가
+			// 남을 수 있음). 재생 페이지가 실제 접속 중인지(SSE)로 판단한다.
+			if popupSrv.ClientCount() > 0 {
 				popupSrv.Broadcast("reload")
-			} else if err := launcher.Launch(popupSrv.PlayerURL()); err != nil {
-				log.Printf("재생 창 재실행 실패: %v", err)
+			} else {
+				launcher.Kill()
+				if err := launcher.Launch(popupSrv.PlayerURL()); err != nil {
+					log.Printf("재생 창 재실행 실패: %v", err)
+				}
 			}
 		}
 	}
@@ -93,6 +98,17 @@ func main() {
 	} else {
 		popupSrv = srv
 		defer srv.Close()
+		// 재생 창이 닫히거나 죽으면(연결 단절 + 유예 초과) 워치독 주기를 기다리지 않고 바로 되살린다.
+		srv.SetOnClientsGone(func() {
+			if !playerSvc.IsPlaying() {
+				return
+			}
+			log.Printf("재생 창 연결이 끊겨 다시 실행합니다")
+			launcher.Kill()
+			if err := launcher.Launch(srv.PlayerURL()); err != nil {
+				log.Printf("재생 창 재실행 실패: %v", err)
+			}
+		})
 	}
 
 	app = NewApp(
