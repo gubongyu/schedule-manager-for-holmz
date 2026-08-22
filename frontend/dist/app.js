@@ -578,74 +578,8 @@ async function renderAdminSchedule() {
   await render();
 }
 
-// --- 영상 재생 (YouTube IFrame Player + 워치독 연동) ---
-let ytPlayer = null, ytApiPromise = null, playerPlaylist = [], playerIdx = 0, hbTimer = null, playerFatalMsg = '';
-
-function loadYTApi() {
-  if (window.YT && window.YT.Player) return Promise.resolve();
-  if (!ytApiPromise) {
-    ytApiPromise = new Promise(resolve => {
-      window.onYouTubeIframeAPIReady = resolve;
-      const s = document.createElement('script');
-      s.src = 'https://www.youtube.com/iframe_api';
-      document.head.appendChild(s);
-    });
-  }
-  return ytApiPromise;
-}
-
-function destroyLocalPlayer() {
-  clearInterval(hbTimer);
-  hbTimer = null;
-  if (ytPlayer) { try { ytPlayer.destroy(); } catch (e) { } ytPlayer = null; }
-  const wrap = document.getElementById('player-wrap');
-  if (wrap) wrap.innerHTML = '<div id="yt-player"></div>';
-}
-
-function playNext() {
-  if (!ytPlayer || !playerPlaylist.length) return;
-  playerIdx = (playerIdx + 1) % playerPlaylist.length;
-  ytPlayer.loadVideoById(playerPlaylist[playerIdx].videoId);
-}
-
-function reloadCurrentVideo() {
-  if (ytPlayer && playerPlaylist.length) {
-    ytPlayer.loadVideoById(playerPlaylist[playerIdx].videoId);
-  } else if (currentView === 'admin-player') {
-    beginPlayback();
-  }
-}
-
-async function beginPlayback() {
-  playerPlaylist = (await api().ActivePlaylist()) || [];
-  if (!playerPlaylist.length) {
-    alert('재생목록이 비어 있습니다. 영상을 먼저 등록하세요.');
-    await api().StopPlayback();
-    return;
-  }
-  await loadYTApi();
-  if (!document.getElementById('yt-player')) return; // 재생 화면이 아니면 보류
-  destroyLocalPlayer();
-  playerIdx = 0;
-  playerFatalMsg = '';
-  ytPlayer = new YT.Player('yt-player', {
-    videoId: playerPlaylist[0].videoId,
-    playerVars: { autoplay: 1, controls: 1, rel: 0 },
-    events: {
-      onReady: e => e.target.playVideo(),
-      onStateChange: e => {
-        if (e.data === YT.PlayerState.ENDED) playNext();
-        else if (e.data === YT.PlayerState.PLAYING) api().PlayerHeartbeat('playing');
-      },
-      onError: () => api().PlayerHeartbeat('error'),
-    },
-  });
-  hbTimer = setInterval(() => {
-    if (ytPlayer && ytPlayer.getPlayerState && ytPlayer.getPlayerState() === YT.PlayerState.PLAYING) {
-      api().PlayerHeartbeat('playing');
-    }
-  }, 10000);
-}
+// --- 영상 재생 (별도 팝업 창에서 재생, 이 화면은 리모컨 역할) ---
+let playerFatalMsg = '';
 
 async function renderAdminPlayer() {
   const [items, playing] = await Promise.all([api().PlaylistItems(), api().PlayerStatus()]);
@@ -653,17 +587,16 @@ async function renderAdminPlayer() {
     <h2>영상 재생</h2>
     ${playerFatalMsg ? `<div class="fatal-banner">⚠️ ${esc(playerFatalMsg)}</div>` : ''}
     <div class="card">
+      <div class="card-head"><h3>재생 제어</h3>
+        ${playing ? '<span class="pill acc">▶ 재생 중 (팝업 창)</span>' : '<span class="pill neu">■ 정지됨</span>'}</div>
       <div class="row">
-        <button id="pl-start" class="big-btn in" ${playing ? 'disabled' : ''}>재생 시작</button>
+        <button id="pl-start" class="big-btn in" ${playing ? 'disabled' : ''}>팝업으로 재생 시작</button>
         <button id="pl-stop" class="big-btn out" ${playing ? '' : 'disabled'}>재생 종료</button>
-        <button id="pl-full" class="small">전체화면</button>
-        <button id="pl-mute" class="small">음소거 전환</button>
-        <label>음량 <input type="range" id="pl-vol" min="0" max="100" value="60"></label>
       </div>
-      <div id="player-wrap"><div id="yt-player"></div></div>
       <p class="hint" style="margin-top:8px">
-        재생 중에는 이 화면을 유지하세요. 오류·끊김은 워치독이 자동으로 재시작합니다.
-        스케줄 자동 재생 시 이 화면으로 자동 전환됩니다.</p>
+        영상은 별도 재생 창에서 나옵니다. 창을 TV/보조 모니터로 옮기고 <b>더블클릭</b>하면 전체화면이 됩니다.
+        재생 중에도 이 프로그램의 다른 화면을 자유롭게 사용할 수 있으며,
+        오류·끊김은 워치독이 자동으로 재시작합니다 (창을 닫아도 다시 열립니다 — 종료는 [재생 종료]로).</p>
     </div>
     <div class="card">
       <h3>재생목록</h3>
@@ -676,13 +609,13 @@ async function renderAdminPlayer() {
         <button id="pl-add" class="small primary">추가</button>
       </div>
     </div>`;
-  document.getElementById('pl-start').onclick = () => api().StartPlayback();
-  document.getElementById('pl-stop').onclick = () => api().StopPlayback();
-  document.getElementById('pl-full').onclick = () => document.getElementById('player-wrap').requestFullscreen();
-  document.getElementById('pl-mute').onclick = () => {
-    if (ytPlayer) ytPlayer.isMuted() ? ytPlayer.unMute() : ytPlayer.mute();
+  document.getElementById('pl-start').onclick = async () => {
+    if (!(items || []).length) { alert('재생목록이 비어 있습니다. 영상을 먼저 등록하세요.'); return; }
+    playerFatalMsg = '';
+    await api().StartPlayback();
+    renderAdminPlayer();
   };
-  document.getElementById('pl-vol').oninput = e => { if (ytPlayer) ytPlayer.setVolume(Number(e.target.value)); };
+  document.getElementById('pl-stop').onclick = async () => { await api().StopPlayback(); renderAdminPlayer(); };
   document.getElementById('pl-add').onclick = () => {
     const url = document.getElementById('pl-url').value.trim();
     if (!url) return;
@@ -692,7 +625,6 @@ async function renderAdminPlayer() {
   $view.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
     if (confirm('재생목록에서 삭제할까요?')) api().RemovePlaylistItem(Number(b.dataset.del)).then(renderAdminPlayer, showError);
   });
-  if (playing && !ytPlayer) await beginPlayback();
 }
 
 async function renderAdminSettings() {
@@ -778,11 +710,6 @@ function handleScheduleAction(action) {
 
 async function navigate(name, opts = {}) {
   if (name.startsWith('admin-') && !opts.skipAdminGate && !(await ensureAdminVerified())) return;
-  if (currentView === 'admin-player' && name !== 'admin-player' && ytPlayer) {
-    if (!confirm('영상 재생 중입니다. 화면을 이동하면 재생이 중지됩니다. 이동할까요?')) return;
-    await api().StopPlayback();
-    destroyLocalPlayer();
-  }
   currentView = name;
   document.querySelectorAll('#nav button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
   try {
@@ -801,19 +728,16 @@ document.getElementById('today').textContent = new Date().toLocaleDateString('ko
   await refreshEmployees();
   if (window.runtime) {
     window.runtime.EventsOn('schedule:action', handleScheduleAction);
-    window.runtime.EventsOn('player:start', async () => {
-      if (currentView !== 'admin-player') await navigate('admin-player', { skipAdminGate: true });
-      await beginPlayback();
-    });
-    window.runtime.EventsOn('player:stop', () => {
-      destroyLocalPlayer();
+    // 재생은 팝업 창이 담당. 여기서는 상태 표시만 갱신한다.
+    const refreshPlayerView = () => {
       if (currentView === 'admin-player') renderAdminPlayer();
-    });
-    window.runtime.EventsOn('player:reload', reloadCurrentVideo);
+      else if (currentView === 'dashboard') renderDashboard();
+    };
+    window.runtime.EventsOn('player:start', refreshPlayerView);
+    window.runtime.EventsOn('player:stop', refreshPlayerView);
     window.runtime.EventsOn('player:fatal', msg => {
       playerFatalMsg = msg || '영상 재생을 복구하지 못했습니다.';
-      destroyLocalPlayer();
-      if (currentView === 'admin-player') renderAdminPlayer();
+      refreshPlayerView();
     });
   }
   const startupAction = await api().GetStartupAction();

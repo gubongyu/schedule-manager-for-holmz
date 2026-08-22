@@ -345,10 +345,9 @@ func (a *App) AddPlaylistItem(url, title string) (*domain.PlaylistItem, error) {
 	return a.player.AddVideo(url, title)
 }
 func (a *App) RemovePlaylistItem(id int64) error { return a.player.Remove(id) }
-func (a *App) StartPlayback()                    { a.player.Start() }
-func (a *App) StopPlayback()                     { a.player.Stop() }
-func (a *App) PlayerHeartbeat(state string)      { a.player.Heartbeat(state) }
-func (a *App) PlayerStatus() bool                { return a.player.IsPlaying() }
+func (a *App) StartPlayback()     { a.player.Start() }
+func (a *App) StopPlayback()      { a.player.Stop() }
+func (a *App) PlayerStatus() bool { return a.player.IsPlaying() }
 
 // --- Google Drive 동기화 ---
 

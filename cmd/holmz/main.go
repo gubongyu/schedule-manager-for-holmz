@@ -14,6 +14,7 @@ import (
 
 	"holmz/frontend"
 	"holmz/internal/adapter/googledrive"
+	"holmz/internal/adapter/popup"
 	"holmz/internal/adapter/scheduler"
 	"holmz/internal/repository/sqlite"
 	"holmz/internal/service"
@@ -57,11 +58,41 @@ func main() {
 	}
 
 	var app *App
+	var popupSrv *popup.Server
+	launcher := popup.NewLauncher(filepath.Join(cfgDir, "edge-player"))
+
 	// 이벤트는 Wails 컨텍스트 준비 후에만 발행한다 (startup 이전 호출 가드).
+	// 재생 상태 이벤트는 UI 알림과 동시에 팝업 창(Edge 앱 모드)을 제어한다.
 	emit := func(event string, data ...any) {
 		if app != nil && app.ctx != nil {
 			runtime.EventsEmit(app.ctx, event, data...)
 		}
+		if popupSrv == nil {
+			return
+		}
+		switch event {
+		case "player:start":
+			if err := launcher.Launch(popupSrv.PlayerURL()); err != nil {
+				log.Printf("재생 창 실행 실패: %v", err)
+			}
+		case "player:stop", "player:fatal":
+			popupSrv.Broadcast("stop")
+			launcher.Kill()
+		case "player:reload":
+			if launcher.Running() {
+				popupSrv.Broadcast("reload")
+			} else if err := launcher.Launch(popupSrv.PlayerURL()); err != nil {
+				log.Printf("재생 창 재실행 실패: %v", err)
+			}
+		}
+	}
+
+	playerSvc := service.NewPlayerService(sqlite.NewPlaylistRepo(db), emit, nil)
+	if srv, err := popup.StartServer(playerSvc); err != nil {
+		log.Printf("재생 팝업 서버 시작 실패: %v", err)
+	} else {
+		popupSrv = srv
+		defer srv.Close()
 	}
 
 	app = NewApp(
@@ -72,7 +103,7 @@ func main() {
 		drive,
 		service.NewScheduleService(sqlite.NewScheduleRepo(db), scheduler.New(exePath, nil),
 			filepath.Join(cfgDir, "announce")),
-		service.NewPlayerService(sqlite.NewPlaylistRepo(db), emit, nil),
+		playerSvc,
 		service.NewAuthService(employeeRepo, sqlite.NewSettingsRepo(db)),
 		service.NewShiftService(sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db), nil),
 		filepath.Join(cfgDir, "photos"),
