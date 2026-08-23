@@ -1032,6 +1032,66 @@ async function renderSubRequest() {
   await render();
 }
 
+// 안내 방송: 텍스트를 입력하면 Windows 내장 TTS로 즉시 매장에 송출한다.
+const recentAnnounces = [];
+async function renderAnnounce() {
+  const speaking = await api().AnnounceSpeaking();
+  $view.innerHTML = `
+    <h2>안내 방송</h2>
+    <div class="card">
+      <div class="card-head"><h3>방송 문구</h3>
+        ${speaking ? '<span class="pill acc">📢 방송 중</span>' : '<span class="pill neu">대기</span>'}</div>
+      <textarea id="ann-text" rows="4" placeholder="예) 4층 열람실이 30분 후 마감됩니다. 정리 부탁드립니다." style="width:100%"></textarea>
+      <div class="row" style="margin-top:12px">
+        <label>속도
+          <select id="ann-rate">
+            <option value="-2">느리게</option>
+            <option value="0" selected>보통</option>
+            <option value="2">빠르게</option>
+          </select>
+        </label>
+        <button id="ann-play" class="big-btn in">📢 방송 시작</button>
+        <button id="ann-stop" class="big-btn out" ${speaking ? '' : 'disabled'}>중지</button>
+      </div>
+      <p class="hint" style="margin-top:8px">한국어/영어는 자동 인식됩니다. 새 방송을 시작하면 진행 중인 방송은 중단됩니다.</p>
+    </div>
+    ${recentAnnounces.length ? `<div class="card">
+      <h3>최근 방송</h3>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
+        ${recentAnnounces.map((t, i) => `
+          <div class="row" style="margin:0">
+            <span style="flex:1;font-size:13px">${esc(t)}</span>
+            <button class="small" data-replay="${i}">다시 방송</button>
+          </div>`).join('')}
+      </div>
+    </div>` : ''}`;
+
+  const startAnnounce = async (text) => {
+    const rate = Number(document.getElementById('ann-rate').value || 0);
+    try {
+      await api().Announce(text, rate);
+      if (!recentAnnounces.includes(text)) {
+        recentAnnounces.unshift(text);
+        if (recentAnnounces.length > 5) recentAnnounces.pop();
+      }
+      toast('방송을 시작했습니다');
+      renderAnnounce();
+    } catch (err) { showError(err); }
+  };
+  document.getElementById('ann-play').onclick = () => {
+    const text = document.getElementById('ann-text').value.trim();
+    if (!text) { toast('방송할 내용을 입력하세요.', 'err'); return; }
+    startAnnounce(text);
+  };
+  document.getElementById('ann-stop').onclick = async () => {
+    await api().StopAnnounce();
+    toast('방송을 중지했습니다');
+    renderAnnounce();
+  };
+  $view.querySelectorAll('[data-replay]').forEach(b => b.onclick = () =>
+    startAnnounce(recentAnnounces[Number(b.dataset.replay)]));
+}
+
 const views = {
   'dashboard': renderDashboard,
   'worklog': renderWorklog,
@@ -1039,6 +1099,7 @@ const views = {
   'checklist-close': () => renderChecklist('close'),
   'sub-request': renderSubRequest,
   'player': renderAdminPlayer,
+  'announce': renderAnnounce,
   'admin-worklog': renderAdminWorklog,
   'admin-shifts': renderAdminShifts,
   'admin-checklist': renderAdminChecklist,

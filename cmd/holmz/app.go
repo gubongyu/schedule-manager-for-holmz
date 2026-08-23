@@ -14,6 +14,7 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"holmz/internal/adapter/speech"
 	"holmz/internal/domain"
 	"holmz/internal/service"
 )
@@ -31,6 +32,7 @@ type App struct {
 	auth      *service.AuthService
 	shifts    *service.ShiftService
 	settings  domain.SettingsRepo
+	announcer *speech.Announcer
 
 	photosDir     string
 	startupAction string // --action 플래그로 전달된 자동화 동작
@@ -42,8 +44,26 @@ func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, chec
 	settings domain.SettingsRepo, photosDir, startupAction string) *App {
 	return &App{employees: employees, worklog: worklog, checklist: checklist,
 		sync: sync, drive: drive, schedule: schedule, player: player, auth: auth, shifts: shifts,
-		settings: settings, photosDir: photosDir, startupAction: startupAction}
+		settings: settings, announcer: speech.NewAnnouncer(),
+		photosDir: photosDir, startupAction: startupAction}
 }
+
+// --- 안내 방송 (텍스트 → 즉시 음성 송출, Windows 내장 TTS) ---
+
+// Announce 는 입력 텍스트를 즉시 음성으로 방송한다. rate: -10(느림)~10(빠름), 0이 보통.
+func (a *App) Announce(text string, rate int) error {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return errors.New("방송할 내용을 입력하세요")
+	}
+	if len([]rune(text)) > 500 {
+		return errors.New("방송 문구는 500자 이하로 입력하세요")
+	}
+	return a.announcer.Speak(text, rate)
+}
+
+func (a *App) StopAnnounce()          { a.announcer.Stop() }
+func (a *App) AnnounceSpeaking() bool { return a.announcer.Speaking() }
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
