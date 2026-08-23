@@ -156,13 +156,21 @@ select {
   font-size: 13px; font-family: inherit; background: var(--card); color: var(--text);
 }
 button.small {
-  height: 30px; padding: 0 13px; border: 0; border-radius: 9px;
+  height: 34px; padding: 0 16px; border: 0; border-radius: 9px;
   background: var(--ghost); color: var(--text);
-  font: 500 12px/1 inherit; letter-spacing: inherit; cursor: pointer;
+  font: 500 12.5px/1 inherit; letter-spacing: inherit; cursor: pointer;
 }
 button.small:hover { background: var(--accent-bg); color: var(--accent-text); }
 button.small.primary { background: var(--accent); color: var(--on-accent); }
 button.small.primary:hover { filter: brightness(1.08); color: var(--on-accent); }
+/* 파괴적 동작(삭제 등)은 붉은 틴트로 구분한다 */
+button.small.danger { background: var(--warn-bg); color: var(--warn-text); }
+button.small.danger:hover { background: var(--warn); color: #fff; }
+/* 인접 버튼 사이 최소 간격 확보 (표 셀 등 flex gap이 없는 곳) */
+button.small + button.small { margin-left: 8px; }
+button.small:disabled { background: var(--bar); color: var(--muted2); cursor: default; }
+/* 누름 피드백 */
+button.small:active:not(:disabled), .big-btn:active:not(:disabled), button.ghost:active { transform: scale(.96); }
 button:focus-visible, input:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
@@ -261,6 +269,22 @@ textarea {
 .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .modal pre { white-space: pre-wrap; font-family: inherit; font-size: 13px; color: var(--text); }
 
+/* --- 동작 피드백 토스트 --- */
+#toast {
+  position: fixed; left: 50%; bottom: 30px; z-index: 999;
+  transform: translateX(-50%) translateY(10px);
+  background: var(--card); color: var(--text);
+  border: 1px solid var(--border); border-radius: 999px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+  padding: 11px 20px; font-size: 13px; font-weight: 500;
+  opacity: 0; pointer-events: none;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.err { color: var(--warn-text); border-color: var(--warn); }
+
 @media (prefers-reduced-motion: no-preference) {
-  #nav button, button.ghost, button.small, .big-btn { transition: background .12s ease, color .12s ease; }
+  #nav button, button.ghost, button.small, .big-btn {
+    transition: background .12s ease, color .12s ease, transform .1s ease;
+  }
+  #toast { transition: opacity .18s ease, transform .18s ease; }
 }

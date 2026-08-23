@@ -84,10 +84,32 @@ async function ensureAdminVerified() {
   return true;
 }
 
+// --- 동작 피드백 토스트 (Apple HUD 스타일: 하단 중앙, 자동 사라짐) ---
+let toastTimer = null;
+function toast(msg, type = 'ok') {
+  let el = document.getElementById('toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toast';
+    document.body.appendChild(el);
+  }
+  el.textContent = (type === 'ok' ? '✓ ' : '✕ ') + msg;
+  el.classList.toggle('err', type === 'err');
+  el.classList.remove('show');
+  requestAnimationFrame(() => el.classList.add('show'));
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+// ok(msg, next)는 성공 토스트를 띄운 뒤 화면을 갱신하는 then 핸들러를 만든다.
+const ok = (msg, next) => () => { toast(msg); return next(); };
+
 function showError(err) {
+  const msg = typeof err === 'string' ? err : (err?.message || String(err));
+  toast(msg, 'err');
   const el = document.createElement('p');
   el.className = 'error';
-  el.textContent = typeof err === 'string' ? err : (err?.message || String(err));
+  el.textContent = msg;
   $view.appendChild(el);
 }
 
@@ -243,17 +265,18 @@ async function renderWorklog() {
   document.getElementById('btn-in').onclick = async () => {
     if (await ensureEmployeeVerified()) {
       api().ClockIn(emp.id).then(async () => {
+        toast('출근이 기록되었습니다');
         await showNoticeIfAny();
         renderWorklog();
       }, showError);
     }
   };
   document.getElementById('btn-out').onclick = async () => {
-    if (await ensureEmployeeVerified()) api().ClockOut(emp.id).then(renderWorklog, showError);
+    if (await ensureEmployeeVerified()) api().ClockOut(emp.id).then(ok('퇴근이 기록되었습니다', renderWorklog), showError);
   };
   document.getElementById('btn-note').onclick = async () => {
     const v = document.getElementById('note-input').value.trim();
-    if (v && await ensureEmployeeVerified()) api().AddNote(emp.id, v).then(renderWorklog, showError);
+    if (v && await ensureEmployeeVerified()) api().AddNote(emp.id, v).then(ok('기록되었습니다', renderWorklog), showError);
   };
 
   const from = localDateStr(new Date(Date.now() - 30 * 86400e3));
@@ -286,7 +309,7 @@ async function renderChecklist(type) {
       <span class="meta">${e.checked ? `${fmtTime(e.checkedAt)} · ${esc(e.checkedBy)}` : ''}</span>
       ${view.completed ? '' : `<button class="small" data-photo-attach="${e.id}">📷 사진</button>`}
       ${e.photoPath ? `<button class="small" data-photo-view="${e.id}" data-path="${esc(e.photoPath)}">보기</button>` : ''}
-      ${e.photoPath && !view.completed ? `<button class="small" data-photo-del="${e.id}" data-path="${esc(e.photoPath)}">사진 삭제</button>` : ''}
+      ${e.photoPath && !view.completed ? `<button class="small danger" data-photo-del="${e.id}" data-path="${esc(e.photoPath)}">사진 삭제</button>` : ''}
     </div>
     <div class="photo-box" id="photo-${e.id}"></div>`).join('') ||
     '<p>등록된 항목이 없습니다. 관리자 메뉴에서 항목을 추가하세요.</p>';
@@ -301,7 +324,7 @@ async function renderChecklist(type) {
   wrap.querySelectorAll('[data-photo-attach]').forEach(b => b.onclick = async () => {
     if (!(await ensureEmployeeVerified())) return;
     api().AttachChecklistPhoto(Number(b.dataset.photoAttach))
-      .then(path => { if (path) renderChecklist(type); }, showError);
+      .then(path => { if (path) { toast('사진이 첨부되었습니다'); renderChecklist(type); } }, showError);
   });
   wrap.querySelectorAll('[data-photo-view]').forEach(b => b.onclick = () => {
     const box = document.getElementById(`photo-${b.dataset.photoView}`);
@@ -313,13 +336,13 @@ async function renderChecklist(type) {
     if (!(await ensureEmployeeVerified())) return;
     if (confirm('첨부 사진을 삭제할까요?')) {
       api().RemoveChecklistPhoto(Number(b.dataset.photoDel), b.dataset.path)
-        .then(() => renderChecklist(type), showError);
+        .then(ok('사진이 삭제되었습니다', () => renderChecklist(type)), showError);
     }
   });
   document.getElementById('btn-complete').onclick = async () => {
     const verified = await ensureEmployeeVerified();
     if (!verified) return;
-    api().CompleteChecklist(type, verified.name).then(() => renderChecklist(type), showError);
+    api().CompleteChecklist(type, verified.name).then(ok(label + ' 완료 처리되었습니다', () => renderChecklist(type)), showError);
   };
 }
 
@@ -351,13 +374,13 @@ async function renderAdminChecklist() {
     const section = (typ, label, list) => `
       <div class="card">
         <h3>${label} 항목</h3>
-        <table><tr><th style="width:70px">순서</th><th>항목명</th><th style="width:70px">필수</th><th style="width:130px"></th></tr>
+        <table><tr><th style="width:70px">순서</th><th>항목명</th><th style="width:70px">필수</th><th style="width:175px"></th></tr>
         ${(list || []).map(t => `<tr data-tpl="${t.id}" data-type="${typ}">
           <td><input type="number" data-field="order" value="${t.sortOrder}" style="width:60px"></td>
           <td><input type="text" data-field="name" value="${esc(t.name)}" style="width:100%"></td>
           <td><input type="checkbox" data-field="required" ${t.required ? 'checked' : ''}></td>
           <td><button class="small primary" data-save="${t.id}">저장</button>
-              <button class="small" data-del="${t.id}">삭제</button></td></tr>`).join('')}</table>
+              <button class="small danger" data-del="${t.id}">삭제</button></td></tr>`).join('')}</table>
         <div class="row" style="margin-top:10px">
           <input type="number" id="ord-${typ}" placeholder="순서" style="width:70px" value="${(list?.length || 0) + 1}">
           <input type="text" id="name-${typ}" placeholder="항목명" style="flex:1">
@@ -380,7 +403,7 @@ async function renderAdminChecklist() {
         sortOrder: Number(row.querySelector('[data-field=order]').value || 0),
         required: row.querySelector('[data-field=required]').checked,
         active: true,
-      }).then(render, showError);
+      }).then(ok('저장되었습니다', render), showError);
     });
     $view.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
       const typ = b.dataset.add;
@@ -388,10 +411,10 @@ async function renderAdminChecklist() {
       if (!name) return;
       api().AddChecklistTemplate(typ, name,
         Number(document.getElementById(`ord-${typ}`).value || 0),
-        document.getElementById(`req-${typ}`).checked).then(render, showError);
+        document.getElementById(`req-${typ}`).checked).then(ok('추가되었습니다', render), showError);
     });
     $view.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
-      if (confirm('이 항목을 삭제할까요?')) api().RemoveChecklistTemplate(Number(b.dataset.del)).then(render, showError);
+      if (confirm('이 항목을 삭제할까요?')) api().RemoveChecklistTemplate(Number(b.dataset.del)).then(ok('삭제되었습니다', render), showError);
     });
   };
   await render();
@@ -403,13 +426,13 @@ async function renderAdminEmployees() {
     $view.innerHTML = `
       <h2>직원 관리</h2>
       <div class="card">
-        <table><tr><th>이름</th><th>학번</th><th>학과</th><th style="width:130px"></th></tr>
+        <table><tr><th>이름</th><th>학번</th><th>학과</th><th style="width:175px"></th></tr>
         ${all.map(e => `<tr data-emp="${e.id}">
           <td><input type="text" data-f="name" value="${esc(e.name)}" style="width:100%"></td>
           <td><input type="text" data-f="sid" value="${esc(e.studentId)}" style="width:100%"></td>
           <td><input type="text" data-f="dept" value="${esc(e.department)}" style="width:100%"></td>
           <td><button class="small primary" data-save="${e.id}">저장</button>
-              <button class="small" data-del="${e.id}">삭제</button></td></tr>`).join('')}</table>
+              <button class="small danger" data-del="${e.id}">삭제</button></td></tr>`).join('')}</table>
         <div class="row" style="margin-top:10px">
           <input type="text" id="emp-name" placeholder="이름">
           <input type="text" id="emp-sid" placeholder="학번">
@@ -424,7 +447,7 @@ async function renderAdminEmployees() {
       api().AddEmployee(name,
         document.getElementById('emp-sid').value.trim(),
         document.getElementById('emp-dept').value.trim())
-        .then(async () => { await refreshEmployees(); await render(); }, showError);
+        .then(async () => { toast('직원이 추가되었습니다'); await refreshEmployees(); await render(); }, showError);
     };
     $view.querySelectorAll('[data-save]').forEach(b => b.onclick = () => {
       const row = b.closest('tr');
@@ -436,12 +459,12 @@ async function renderAdminEmployees() {
         studentId: row.querySelector('[data-f=sid]').value.trim(),
         department: row.querySelector('[data-f=dept]').value.trim(),
         active: true,
-      }).then(async () => { await refreshEmployees(); await render(); }, showError);
+      }).then(async () => { toast('저장되었습니다'); await refreshEmployees(); await render(); }, showError);
     });
     $view.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
       if (!confirm('이 직원을 목록에서 삭제할까요? (기존 근로기록은 보존됩니다)')) return;
       api().DeleteEmployee(Number(b.dataset.del))
-        .then(async () => { await refreshEmployees(); await render(); }, showError);
+        .then(async () => { toast('삭제되었습니다'); await refreshEmployees(); await render(); }, showError);
     });
   };
   await render();
@@ -534,7 +557,7 @@ async function renderAdminShifts() {
               : '<span class="pill neu">추가</span>'}</td>
             <td class="mono">${o.type === 'off' ? '—' : `${o.start}–${o.end}`}</td>
             <td class="hint">${esc(o.note)}</td>
-            <td><button class="small" data-del-ov="${o.id}">삭제</button></td></tr>`).join('')}</table>`
+            <td><button class="small danger" data-del-ov="${o.id}">삭제</button></td></tr>`).join('')}</table>`
         : '<p class="hint" style="margin-bottom:12px">등록된 예외가 없습니다.</p>'}
         <div class="row">
           <input type="date" id="ov-date" value="${todayStr()}">
@@ -563,11 +586,12 @@ async function renderAdminShifts() {
       if (!empId || !days.length) { alert('직원과 요일을 선택하세요.'); return; }
       try {
         for (const d of days) await api().AddShift(empId, d, start, end);
+        toast('배치가 추가되었습니다');
         await render();
       } catch (err) { showError(err); }
     };
     $view.querySelectorAll('[data-del-shift]').forEach(b => b.onclick = () => {
-      api().DeleteShift(Number(b.dataset.delShift)).then(render, showError);
+      api().DeleteShift(Number(b.dataset.delShift)).then(ok('삭제되었습니다', render), showError);
     });
     const ovType = document.getElementById('ov-type');
     const syncOvTimeInputs = () => {
@@ -587,10 +611,10 @@ async function renderAdminShifts() {
         document.getElementById('ov-end').value,
         document.getElementById('ov-note').value.trim(),
         ovType.value === 'sub' ? Number(document.getElementById('ov-cover').value || 0) : 0,
-      ).then(render, showError);
+      ).then(ok('예외가 등록되었습니다', render), showError);
     };
     $view.querySelectorAll('[data-del-ov]').forEach(b => b.onclick = () => {
-      api().DeleteShiftOverride(Number(b.dataset.delOv)).then(render, showError);
+      api().DeleteShiftOverride(Number(b.dataset.delOv)).then(ok('삭제되었습니다', render), showError);
     });
   };
   await render();
@@ -622,7 +646,7 @@ async function renderAdminSchedule() {
           <td><input type="checkbox" data-toggle="${s.id}" ${s.active ? 'checked' : ''}></td>
           <td>${s.actionType === 'play-audio'
             ? `<button class="small" data-test-audio="${esc(s.payload)}" title="미리듣기">▶ 테스트</button> ` : ''}
-            <button class="small" data-del="${s.id}">삭제</button></td></tr>`).join('')}</table>
+            <button class="small danger" data-del="${s.id}">삭제</button></td></tr>`).join('')}</table>
         <div class="row" style="margin-top:10px">
           <input type="text" id="sc-name" placeholder="작업명">
           <input type="text" id="sc-time" placeholder="HH:MM" style="width:80px">
@@ -640,7 +664,7 @@ async function renderAdminSchedule() {
       </div>`;
     document.getElementById('tpl-apply').onclick = () =>
       api().ApplyScheduleTemplate(document.getElementById('tpl-open').value, document.getElementById('tpl-close').value)
-        .then(render, showError);
+        .then(ok('자동화 템플릿 5건이 등록되었습니다', render), showError);
     let audioPayload = '';
     const scAction = document.getElementById('sc-action');
     scAction.onchange = () => {
@@ -663,13 +687,13 @@ async function renderAdminSchedule() {
       const isAudio = scAction.value === 'play-audio';
       const payload = isAudio ? audioPayload : '';
       const repeat = isAudio ? Number(document.getElementById('sc-repeat').value || 1) : 1;
-      api().AddSchedule(name, time, days, scAction.value, payload, repeat).then(render, showError);
+      api().AddSchedule(name, time, days, scAction.value, payload, repeat).then(ok('스케줄이 등록되었습니다', render), showError);
     };
     $view.querySelectorAll('[data-test-audio]').forEach(b => b.onclick = () => playAudioPath(b.dataset.testAudio));
     $view.querySelectorAll('[data-toggle]').forEach(cb => cb.onchange = () =>
-      api().ToggleSchedule(Number(cb.dataset.toggle), cb.checked).then(render, showError));
+      api().ToggleSchedule(Number(cb.dataset.toggle), cb.checked).then(() => { toast(cb.checked ? '활성화되었습니다' : '비활성화되었습니다'); return render(); }, showError));
     $view.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
-      if (confirm('이 스케줄을 삭제할까요?')) api().DeleteSchedule(Number(b.dataset.del)).then(render, showError);
+      if (confirm('이 스케줄을 삭제할까요?')) api().DeleteSchedule(Number(b.dataset.del)).then(ok('삭제되었습니다', render), showError);
     });
   };
   await render();
@@ -699,7 +723,7 @@ async function renderAdminPlayer() {
       <h3>재생목록</h3>
       <table><tr><th>순서</th><th>제목</th><th>영상 ID</th><th></th></tr>
       ${(items || []).map(p => `<tr><td>${p.sortOrder}</td><td>${esc(p.title)}</td>
-        <td>${esc(p.videoId)}</td><td><button class="small" data-del="${p.id}">삭제</button></td></tr>`).join('')}</table>
+        <td>${esc(p.videoId)}</td><td><button class="small danger" data-del="${p.id}">삭제</button></td></tr>`).join('')}</table>
       <div class="row" style="margin-top:10px">
         <input type="text" id="pl-url" placeholder="YouTube 영상 URL" style="flex:1">
         <input type="text" id="pl-title" placeholder="제목(선택)">
@@ -717,10 +741,10 @@ async function renderAdminPlayer() {
     const url = document.getElementById('pl-url').value.trim();
     if (!url) return;
     api().AddPlaylistItem(url, document.getElementById('pl-title').value.trim())
-      .then(renderAdminPlayer, showError);
+      .then(ok('추가되었습니다', renderAdminPlayer), showError);
   };
   $view.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
-    if (confirm('재생목록에서 삭제할까요?')) api().RemovePlaylistItem(Number(b.dataset.del)).then(renderAdminPlayer, showError);
+    if (confirm('재생목록에서 삭제할까요?')) api().RemovePlaylistItem(Number(b.dataset.del)).then(ok('삭제되었습니다', renderAdminPlayer), showError);
   });
 }
 
