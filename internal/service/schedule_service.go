@@ -22,6 +22,46 @@ func NewScheduleService(repo domain.ScheduleRepo, osSched domain.TaskScheduler, 
 
 func (s *ScheduleService) List() ([]domain.ScheduleItem, error) { return s.repo.List() }
 
+// OpenCloseFor 는 해당 요일(MON..SUN)에 지정된 오픈/마감 시각을 반환한다.
+// 활성화된 오픈/마감 체크리스트 알림 스케줄에서 도출하며, 지정이 없으면 빈 문자열이다.
+// 요일 미지정(매일) 스케줄은 모든 요일에 적용된다.
+func (s *ScheduleService) OpenCloseFor(weekday string) (open, close string, err error) {
+	list, err := s.repo.List()
+	if err != nil {
+		return "", "", err
+	}
+	matches := func(item domain.ScheduleItem) bool {
+		if !item.Active {
+			return false
+		}
+		if len(item.RepeatDays) == 0 {
+			return true
+		}
+		for _, d := range item.RepeatDays {
+			if d == weekday {
+				return true
+			}
+		}
+		return false
+	}
+	for _, item := range list {
+		if !matches(item) {
+			continue
+		}
+		switch item.ActionType {
+		case domain.ActionNotifyOpen:
+			if open == "" {
+				open = item.RunTime
+			}
+		case domain.ActionNotifyClose:
+			if close == "" {
+				close = item.RunTime
+			}
+		}
+	}
+	return open, close, nil
+}
+
 var xmlEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
 
 // writePlaylist 는 음성 파일을 Repeat 회 나열한 WMP 재생목록(.wpl)을 생성하고 경로를 반환한다.

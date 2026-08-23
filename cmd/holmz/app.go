@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -286,6 +287,25 @@ func (a *App) SetAdminPIN(currentPIN, newPIN string) error {
 // --- 스케줄 ---
 
 func (a *App) GetStartupAction() string { return a.startupAction }
+
+// OpenCloseTimes 는 오늘 요일에 지정된 오픈/마감 시각을 반환한다 (지정 없으면 빈 문자열).
+type OpenCloseTimes struct {
+	Open  string `json:"open"`
+	Close string `json:"close"`
+}
+
+var weekdayCodes = map[time.Weekday]string{
+	time.Monday: "MON", time.Tuesday: "TUE", time.Wednesday: "WED", time.Thursday: "THU",
+	time.Friday: "FRI", time.Saturday: "SAT", time.Sunday: "SUN",
+}
+
+func (a *App) TodayOpenClose() (*OpenCloseTimes, error) {
+	open, close, err := a.schedule.OpenCloseFor(weekdayCodes[time.Now().Weekday()])
+	if err != nil {
+		return nil, err
+	}
+	return &OpenCloseTimes{Open: open, Close: close}, nil
+}
 func (a *App) ListSchedules() ([]domain.ScheduleItem, error) {
 	return a.schedule.List()
 }

@@ -69,8 +69,9 @@ function applySession() {
   // 관리자: 근무자용 메뉴 숨김 / 근무자: 관리자 메뉴 숨김
   document.querySelectorAll('#nav [data-view^="admin-"], #nav .nav-sep')
     .forEach(el => { el.style.display = isAdmin ? '' : 'none'; });
-  document.querySelectorAll('#nav [data-view="worklog"], #nav [data-view="checklist-open"], #nav [data-view="checklist-close"]')
+  document.querySelectorAll('#nav [data-view="worklog"], #nav [data-view="checklist-open"], #nav [data-view="checklist-close"], #nav [data-view="sub-request"], #nav [data-view="player"]')
     .forEach(el => { el.style.display = isAdmin ? 'none' : ''; });
+  if (!isAdmin) updateChecklistMenus();
   // 근무자 선택은 접속 정보로 대체되므로 항상 숨긴다
   document.querySelector('#topbar label.emp').style.display = 'none';
   document.getElementById('whoami').textContent =
@@ -99,6 +100,27 @@ async function ensureEmployeeVerified() {
   verifiedEmployees.add(emp.id);
   return emp;
 }
+
+// 오픈/마감 체크리스트 메뉴는 관리자가 지정한 당일 오픈/마감 시각이 있을 때만,
+// 각 시각 3시간 전부터 표시한다 (요일별로 지정이 없으면 그날은 숨김).
+let todayOC = null;
+async function updateChecklistMenus() {
+  if (session?.role !== 'employee') return;
+  try { todayOC = await api().TodayOpenClose(); } catch (e) { todayOC = null; }
+  const nowHM = new Date().toTimeString().slice(0, 5);
+  const visibleFrom = (hm) => {
+    if (!hm) return false;
+    const from = (Number(hm.slice(0, 2)) - 3 + 24) % 24;
+    return nowHM >= `${String(from).padStart(2, '0')}:${hm.slice(3)}` || from > Number(hm.slice(0, 2));
+  };
+  const openVisible = todayOC?.open ? visibleFrom(todayOC.open) : false;
+  const closeVisible = todayOC?.close ? visibleFrom(todayOC.close) : false;
+  const openBtn = document.querySelector('#nav [data-view="checklist-open"]');
+  const closeBtn = document.querySelector('#nav [data-view="checklist-close"]');
+  if (openBtn) openBtn.style.display = openVisible ? '' : 'none';
+  if (closeBtn) closeBtn.style.display = closeVisible ? '' : 'none';
+}
+setInterval(() => { if (session?.role === 'employee') updateChecklistMenus(); }, 60 * 1000);
 
 async function ensureAdminVerified() {
   // 접속 시 역할이 정해지므로 별도 PIN 재입력은 없다.
@@ -212,15 +234,39 @@ async function renderDashboard() {
         ${cur ? '<span class="pill ok">근무중</span>' : '<span class="pill neu">근무 전</span>'}</div>
       ${shiftHtml}
     </div>` : ''}
-    <div class="card">
+    ${emp ? hourlyCard(cur) : `<div class="card">
       <div class="card-head"><h3>오픈 / 마감 상태</h3></div>
       ${clLine(open, '오픈')}${clLine(close, '마감')}
-    </div>
+    </div>`}
     <div class="card">
       <div class="card-head"><h3>영상 재생</h3>
         ${playing ? '<span class="pill acc">▶ 재생 중</span>' : '<span class="pill neu">■ 정지됨</span>'}</div>
     </div>
     ${weekCard(week)}`;
+}
+
+// 근무자 대시보드: 본인 정각 업무 기록 진행 카드 (지나간 정각 중 기록한 비율)
+function hourlyCard(cur) {
+  if (!cur) {
+    return `<div class="card">
+      <div class="card-head"><h3>근무 기록 현황</h3><span class="pill neu">근무 전</span></div>
+      <p class="hint">출근하면 시간대별 업무 기록 현황이 표시됩니다.</p>
+    </div>`;
+  }
+  const missing = missedHours(cur);
+  const start = new Date(cur.clockIn);
+  const first = start.getHours() + (start.getMinutes() > 0 ? 1 : 0);
+  const total = Math.max(new Date().getHours() - first + 1, 0);
+  const done = total - missing.length;
+  const pct = total ? Math.round(done / total * 100) : 100;
+  return `<div class="card">
+    <div class="card-head"><h3>근무 기록 현황</h3>
+      <span class="mono" style="color:${missing.length ? 'var(--warn-text)' : 'var(--ok-text)'}">${done} / ${total}</span></div>
+    <div class="progress"><i class="${missing.length ? '' : 'fill-ok'}" style="width:${Math.max(pct, 2)}%"></i></div>
+    ${missing.length
+      ? `<p class="hint" style="margin-top:10px">미기록: ${missing.map(h => `${String(h).padStart(2, '0')}:00`).join(', ')} — 근로기록 화면에서 기입하세요.</p>`
+      : '<p class="hint" style="margin-top:10px">모든 시간대가 기록되었습니다. 👍</p>'}
+  </div>`;
 }
 
 // 대시보드 "금주 근무 스케줄" 카드: 휴가·대타가 반영된 요일별 인원 + 오늘 근무 명단
@@ -307,6 +353,7 @@ async function renderWorklog() {
     }
   };
   document.getElementById('btn-out').onclick = async () => {
+    if (!confirm('퇴근 처리할까요? 총 근무시간이 확정됩니다.')) return;
     if (await ensureEmployeeVerified()) api().ClockOut(emp.id).then(ok('퇴근이 기록되었습니다', renderWorklog), showError);
   };
 
@@ -792,6 +839,7 @@ async function renderAdminSchedule() {
 let playerFatalMsg = '';
 
 async function renderAdminPlayer() {
+  const isAdmin = session?.role === 'admin';
   const [items, playing] = await Promise.all([api().PlaylistItems(), api().PlayerStatus()]);
   $view.innerHTML = `
     <h2>영상 재생</h2>
@@ -812,12 +860,12 @@ async function renderAdminPlayer() {
       <h3>재생목록</h3>
       <table><tr><th>순서</th><th>제목</th><th>영상 ID</th><th></th></tr>
       ${(items || []).map(p => `<tr><td>${p.sortOrder}</td><td>${esc(p.title)}</td>
-        <td>${esc(p.videoId)}</td><td><button class="small danger" data-del="${p.id}">삭제</button></td></tr>`).join('')}</table>
-      <div class="row" style="margin-top:10px">
+        <td>${esc(p.videoId)}</td><td>${isAdmin ? `<button class="small danger" data-del="${p.id}">삭제</button>` : ''}</td></tr>`).join('')}</table>
+      ${isAdmin ? `<div class="row" style="margin-top:10px">
         <input type="text" id="pl-url" placeholder="YouTube 영상 URL" style="flex:1">
         <input type="text" id="pl-title" placeholder="제목(선택)">
         <button id="pl-add" class="small primary">추가</button>
-      </div>
+      </div>` : ''}
     </div>`;
   document.getElementById('pl-start').onclick = async () => {
     if (!(items || []).length) { alert('재생목록이 비어 있습니다. 영상을 먼저 등록하세요.'); return; }
@@ -826,7 +874,8 @@ async function renderAdminPlayer() {
     renderAdminPlayer();
   };
   document.getElementById('pl-stop').onclick = async () => { await api().StopPlayback(); renderAdminPlayer(); };
-  document.getElementById('pl-add').onclick = () => {
+  const plAdd = document.getElementById('pl-add');
+  if (plAdd) plAdd.onclick = () => {
     const url = document.getElementById('pl-url').value.trim();
     if (!url) return;
     api().AddPlaylistItem(url, document.getElementById('pl-title').value.trim())
@@ -929,11 +978,67 @@ async function renderAdminSettings() {
   };
 }
 
+// 근무자용 대타 신청: 본인 근무를 대신할 동료를 지정해 등록한다 (동료와 합의 후).
+async function renderSubRequest() {
+  const me = selectedEmployee();
+  if (!me) { $view.innerHTML = '<h2>대타 신청</h2><p class="hint">근무자 계정으로 접속하세요.</p>'; return; }
+  const render = async () => {
+    const [emps, overrides] = (await Promise.all([api().ListEmployees(true), api().ShiftOverrides()])).map(v => v || []);
+    const others = emps.filter(e => e.id !== me.id);
+    const mine = overrides.filter(o => o.type === 'sub' && (o.employeeId === me.id || o.coverEmployeeId === me.id));
+    $view.innerHTML = `
+      <h2>대타 신청</h2>
+      <div class="card">
+        <h3>신청하기</h3>
+        <p class="hint" style="margin:8px 0">대신 근무할 동료와 합의한 뒤 등록하세요. 해당 시간은 스케줄에서 동료 근무로 바뀝니다.</p>
+        <div class="row">
+          <input type="date" id="sub-date" value="${todayStr()}">
+          <input type="text" id="sub-start" placeholder="09:00" style="width:80px">
+          <span class="hint">–</span>
+          <input type="text" id="sub-end" placeholder="13:00" style="width:80px">
+          <select id="sub-cover">${others.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
+          <input type="text" id="sub-note" placeholder="사유 (선택)" style="flex:1">
+          <button id="sub-add" class="small primary" ${others.length ? '' : 'disabled'}>신청</button>
+        </div>
+      </div>
+      <div class="card">
+        <h3>내 대타 내역</h3>
+        ${mine.length ? `<table>
+          <tr><th>날짜</th><th>시간</th><th>내용</th><th>사유</th><th style="width:110px"></th></tr>
+          ${mine.map(o => `<tr>
+            <td class="mono">${o.date}</td><td class="mono">${o.start}–${o.end}</td>
+            <td>${esc(o.employeeName)} → <b>${esc(o.coverName)}</b>${o.coverEmployeeId === me.id ? ' <span class="pill acc">내가 대타</span>' : ''}</td>
+            <td class="hint">${esc(o.note)}</td>
+            <td>${o.employeeId === me.id ? `<button class="small danger" data-cancel-ov="${o.id}">취소</button>` : ''}</td></tr>`).join('')}
+        </table>` : '<p class="hint">등록된 대타 내역이 없습니다.</p>'}
+      </div>`;
+    document.getElementById('sub-add').onclick = () => {
+      api().AddShiftOverride(
+        me.id,
+        document.getElementById('sub-date').value,
+        'sub',
+        document.getElementById('sub-start').value.trim(),
+        document.getElementById('sub-end').value.trim(),
+        document.getElementById('sub-note').value.trim(),
+        Number(document.getElementById('sub-cover').value || 0),
+      ).then(ok('대타 신청이 등록되었습니다', render), showError);
+    };
+    $view.querySelectorAll('[data-cancel-ov]').forEach(b => b.onclick = () => {
+      if (confirm('이 대타 신청을 취소할까요?')) {
+        api().DeleteShiftOverride(Number(b.dataset.cancelOv)).then(ok('취소되었습니다', render), showError);
+      }
+    });
+  };
+  await render();
+}
+
 const views = {
   'dashboard': renderDashboard,
   'worklog': renderWorklog,
   'checklist-open': () => renderChecklist('open'),
   'checklist-close': () => renderChecklist('close'),
+  'sub-request': renderSubRequest,
+  'player': renderAdminPlayer,
   'admin-worklog': renderAdminWorklog,
   'admin-shifts': renderAdminShifts,
   'admin-checklist': renderAdminChecklist,

@@ -190,6 +190,35 @@ func TestScheduleAddRegisterFailureRollsBack(t *testing.T) {
 	}
 }
 
+func TestOpenCloseFor(t *testing.T) {
+	svc, _ := setupSchedule(t)
+	must := func(_ *domain.ScheduleItem, err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 매일 오픈 09:00, 월·화만 마감 22:00, 비활성 마감 23:00(무시되어야 함)
+	must(svc.Add("오픈 알림", "09:00", nil, domain.ActionNotifyOpen, "", 1, true))
+	must(svc.Add("마감 알림", "22:00", []string{"MON", "TUE"}, domain.ActionNotifyClose, "", 1, true))
+	item, err := svc.Add("비활성 마감", "23:00", []string{"WED"}, domain.ActionNotifyClose, "", 1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Toggle(item.ID, false); err != nil {
+		t.Fatal(err)
+	}
+
+	open, close, err := svc.OpenCloseFor("MON")
+	if err != nil || open != "09:00" || close != "22:00" {
+		t.Errorf("MON = %q/%q (err=%v), want 09:00/22:00", open, close, err)
+	}
+	open, close, _ = svc.OpenCloseFor("WED")
+	if open != "09:00" || close != "" {
+		t.Errorf("WED = %q/%q, want 09:00/'' (inactive ignored)", open, close)
+	}
+}
+
 func TestApplyTemplate(t *testing.T) {
 	svc, f := setupSchedule(t)
 	if err := svc.ApplyTemplate("09:00", "22:00"); err != nil {
