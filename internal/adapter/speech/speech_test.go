@@ -8,7 +8,7 @@ import (
 // tts_program의 language.py를 이식: 한글 음절 비율 10% 이상이면 ko.
 func TestDetectLanguage(t *testing.T) {
 	cases := map[string]string{
-		"4층 열람실을 정리해주세요":              "ko",
+		"4층 열람실을 정리해주세요":               "ko",
 		"Library closes in 30 minutes": "en",
 		"The 열람실 will close soon":      "ko", // 혼합 — 한글 비율 충분
 		"OK":                           "en",

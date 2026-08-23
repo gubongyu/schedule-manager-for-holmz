@@ -16,6 +16,7 @@ import (
 	"holmz/internal/adapter/googledrive"
 	"holmz/internal/adapter/popup"
 	"holmz/internal/adapter/scheduler"
+	"holmz/internal/adapter/speech"
 	"holmz/internal/repository/sqlite"
 	"holmz/internal/service"
 )
@@ -133,6 +134,14 @@ func main() {
 		filepath.Join(cfgDir, "photos"),
 		*action,
 	)
+
+	app.SetSynthesizer(speech.NewSynthesizer(filepath.Join(cfgDir, "announce"), func() string {
+		v, err := settingsRepo.Get("tts_command")
+		if err != nil {
+			return ""
+		}
+		return v
+	}))
 
 	err = wails.Run(&options.App{
 		Title:  "HOLMZ 근로 종합 관리",

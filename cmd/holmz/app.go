@@ -32,7 +32,8 @@ type App struct {
 	auth      *service.AuthService
 	shifts    *service.ShiftService
 	settings  domain.SettingsRepo
-	announcer *speech.Announcer
+	announcer *speech.Announcer   // 합성 실패 시 대체용 내장 음성
+	synth     *speech.Synthesizer // tts_program(MeloTTS) wav 생성
 
 	photosDir     string
 	startupAction string // --action 플래그로 전달된 자동화 동작
@@ -48,18 +49,68 @@ func NewApp(employees domain.EmployeeRepo, worklog *service.WorkLogService, chec
 		photosDir: photosDir, startupAction: startupAction}
 }
 
+// SetSynthesizer 는 안내 방송용 TTS 합성기를 주입한다 (main에서 설정 디렉터리를 알고 구성).
+func (a *App) SetSynthesizer(s *speech.Synthesizer) { a.synth = s }
+
 // --- 안내 방송 (텍스트 → 즉시 음성 송출, Windows 내장 TTS) ---
 
-// Announce 는 입력 텍스트를 즉시 음성으로 방송한다. rate: -10(느림)~10(빠름), 0이 보통.
-func (a *App) Announce(text string, rate int) error {
+// AnnounceResult 는 방송 준비 결과다. AudioURL 이 있으면 프론트엔드가 그 음성을 재생하고,
+// 비어 있으면(Fallback) 내장 음성으로 이미 송출된 것이다.
+type AnnounceResult struct {
+	AudioURL string `json:"audioUrl"`
+	WavPath  string `json:"wavPath"`
+	Fallback bool   `json:"fallback"`
+	Message  string `json:"message"`
+}
+
+// Announce 는 입력 텍스트를 tts_program(MeloTTS)으로 합성해 재생용 음성을 돌려준다.
+// 같은 문구·속도는 캐시된 wav를 재사용하며, 합성이 불가능하면 내장 음성으로 대체 송출한다.
+// speed: 1.0이 보통 (tts_program --speed).
+func (a *App) Announce(text string, speed float64) (*AnnounceResult, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return errors.New("방송할 내용을 입력하세요")
+		return nil, errors.New("방송할 내용을 입력하세요")
 	}
 	if len([]rune(text)) > 500 {
-		return errors.New("방송 문구는 500자 이하로 입력하세요")
+		return nil, errors.New("방송 문구는 500자 이하로 입력하세요")
 	}
-	return a.announcer.Speak(text, rate)
+	if speed <= 0 {
+		speed = 1
+	}
+	if a.synth == nil {
+		return nil, errors.New("TTS 합성기가 초기화되지 않았습니다")
+	}
+
+	wav, err := a.synth.WavFor(text, speed)
+	if err != nil {
+		log.Printf("TTS 합성 실패, 내장 음성으로 대체합니다: %v", err)
+		if ferr := a.announcer.Speak(text, 0); ferr != nil {
+			return nil, fmt.Errorf("%v (내장 음성도 실패: %v)", err, ferr)
+		}
+		return &AnnounceResult{Fallback: true, Message: err.Error()}, nil
+	}
+	url, err := a.AudioDataURL(wav)
+	if err != nil {
+		return nil, err
+	}
+	return &AnnounceResult{AudioURL: url, WavPath: wav}, nil
+}
+
+// TTSCommand 는 설정된 TTS 명령 템플릿을 반환한다 (미설정 시 기본값).
+func (a *App) TTSCommand() (string, error) {
+	v, err := a.settings.Get("tts_command")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(v) == "" {
+		return speech.DefaultCommand, nil
+	}
+	return v, nil
+}
+
+// SetTTSCommand 는 TTS 명령 템플릿을 저장한다. 빈 값이면 기본값을 사용한다.
+func (a *App) SetTTSCommand(cmd string) error {
+	return a.settings.Set("tts_command", strings.TrimSpace(cmd))
 }
 
 func (a *App) StopAnnounce()          { a.announcer.Stop() }
@@ -260,6 +311,7 @@ func (a *App) EmployeeNeedsVerify(employeeID int64) (bool, error) {
 func (a *App) VerifyEmployee(employeeID int64, studentID string) (bool, error) {
 	return a.auth.VerifyEmployee(employeeID, studentID)
 }
+
 // Login 은 이름+학번(직원) 또는 이름+PIN(관리자)으로 접속을 인증한다. 실패 시 nil.
 func (a *App) Login(name, secret string) (*service.LoginResult, error) {
 	return a.auth.Login(name, secret)
@@ -442,9 +494,9 @@ func (a *App) AddPlaylistItem(url, title string) (*domain.PlaylistItem, error) {
 	return a.player.AddVideo(url, title)
 }
 func (a *App) RemovePlaylistItem(id int64) error { return a.player.Remove(id) }
-func (a *App) StartPlayback()     { a.player.Start() }
-func (a *App) StopPlayback()      { a.player.Stop() }
-func (a *App) PlayerStatus() bool { return a.player.IsPlaying() }
+func (a *App) StartPlayback()                    { a.player.Start() }
+func (a *App) StopPlayback()                     { a.player.Stop() }
+func (a *App) PlayerStatus() bool                { return a.player.IsPlaying() }
 
 // --- Google Drive 동기화 ---
 

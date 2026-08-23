@@ -887,8 +887,8 @@ async function renderAdminPlayer() {
 }
 
 async function renderAdminSettings() {
-  const [authorized, notice, taskOptions, adminName] = await Promise.all([
-    api().GoogleAuthorized(), api().GetNotice(), api().GetTaskOptions(), api().AdminName()]);
+  const [authorized, notice, taskOptions, adminName, ttsCommand] = await Promise.all([
+    api().GoogleAuthorized(), api().GetNotice(), api().GetTaskOptions(), api().AdminName(), api().TTSCommand()]);
   $view.innerHTML = `
     <h2>설정 — Google 연동</h2>
     <div class="card">
@@ -931,6 +931,17 @@ async function renderAdminSettings() {
       </div>
     </div>
     <div class="card">
+      <h3>안내 방송 음성 (TTS)</h3>
+      <p class="hint" style="margin:8px 0">
+        안내 방송 문구를 음성으로 만드는 명령입니다. 기본값은 WSL의 tts_program(MeloTTS)을 호출합니다.
+        자리표시자: {in_wsl}/{out_wsl}(WSL 경로), {in}/{out}(원본 경로), {speed}. 비워두면 기본값을 사용합니다.
+        생성이 실패하면 Windows 내장 음성으로 대체 송출됩니다.</p>
+      <textarea id="tts-cmd" rows="3" style="width:100%">${esc(ttsCommand || '')}</textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="tts-save" class="small primary">TTS 명령 저장</button><span id="tts-result" class="hint"></span>
+      </div>
+    </div>
+    <div class="card">
       <h3>업무 항목 (정각 기록용)</h3>
       <p class="hint" style="margin:8px 0">근무 중 매 정각 알림에서 선택하는 업무 목록입니다. 한 줄에 하나씩 입력하세요.</p>
       <textarea id="tasks-text" rows="5">${esc((taskOptions || []).join('\n'))}</textarea>
@@ -941,6 +952,10 @@ async function renderAdminSettings() {
   document.getElementById('notice-save').onclick = () => {
     api().SetNotice(document.getElementById('notice-text').value)
       .then(() => { document.getElementById('notice-result').textContent = '✅ 저장됨'; }, showError);
+  };
+  document.getElementById('tts-save').onclick = () => {
+    api().SetTTSCommand(document.getElementById('tts-cmd').value)
+      .then(ok('TTS 명령이 저장되었습니다', renderAdminSettings), showError);
   };
   document.getElementById('tasks-save').onclick = () => {
     const lines = document.getElementById('tasks-text').value.split('\n').map(s => s.trim()).filter(Boolean);
@@ -1032,31 +1047,37 @@ async function renderSubRequest() {
   await render();
 }
 
-// 안내 방송: 텍스트를 입력하면 Windows 내장 TTS로 즉시 매장에 송출한다.
+// 안내 방송: 입력한 문구를 tts_program(MeloTTS)으로 wav 합성해 즉시 송출한다.
+// 같은 문구는 캐시되어 두 번째부터 즉시 재생된다.
 const recentAnnounces = [];
+let annAudio = null;
+let announceBusy = false;
+
 async function renderAnnounce() {
-  const speaking = await api().AnnounceSpeaking();
+  const playing = annAudio && !annAudio.paused;
   $view.innerHTML = `
     <h2>안내 방송</h2>
     <div class="card">
       <div class="card-head"><h3>방송 문구</h3>
-        ${speaking ? '<span class="pill acc">📢 방송 중</span>' : '<span class="pill neu">대기</span>'}</div>
+        <span class="pill ${playing ? 'acc' : 'neu'}">${playing ? '📢 방송 중' : '대기'}</span></div>
       <textarea id="ann-text" rows="4" placeholder="예) 4층 열람실이 30분 후 마감됩니다. 정리 부탁드립니다." style="width:100%"></textarea>
       <div class="row" style="margin-top:12px">
         <label>속도
           <select id="ann-rate">
-            <option value="-2">느리게</option>
-            <option value="0" selected>보통</option>
-            <option value="2">빠르게</option>
+            <option value="0.9">느리게</option>
+            <option value="1" selected>보통</option>
+            <option value="1.15">빠르게</option>
           </select>
         </label>
         <button id="ann-play" class="big-btn in">📢 방송 시작</button>
-        <button id="ann-stop" class="big-btn out" ${speaking ? '' : 'disabled'}>중지</button>
+        <button id="ann-stop" class="big-btn out" ${playing ? '' : 'disabled'}>중지</button>
       </div>
-      <p class="hint" style="margin-top:8px">한국어/영어는 자동 인식됩니다. 새 방송을 시작하면 진행 중인 방송은 중단됩니다.</p>
+      <p id="ann-status" class="hint" style="margin-top:8px">
+        한국어/영어는 자동 인식됩니다. 처음 쓰는 문구는 음성 생성에 20초 내외가 걸리고, 같은 문구는 이후 즉시 재생됩니다.</p>
     </div>
     ${recentAnnounces.length ? `<div class="card">
       <h3>최근 방송</h3>
+      <p class="hint" style="margin:8px 0">생성된 음성은 %APPDATA%\\HOLMZ\\announce 에 저장되어, 스케줄의 "음성 재생"에서도 고를 수 있습니다.</p>
       <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
         ${recentAnnounces.map((t, i) => `
           <div class="row" style="margin:0">
@@ -1066,24 +1087,49 @@ async function renderAnnounce() {
       </div>
     </div>` : ''}`;
 
+  const setStatus = (msg) => { document.getElementById('ann-status').textContent = msg; };
+
   const startAnnounce = async (text) => {
-    const rate = Number(document.getElementById('ann-rate').value || 0);
+    if (announceBusy) { toast('음성을 생성하는 중입니다. 잠시만 기다려주세요.', 'err'); return; }
+    announceBusy = true;
+    const rate = Number(document.getElementById('ann-rate').value || 1);
+    const playBtn = document.getElementById('ann-play');
+    playBtn.disabled = true;
+    setStatus('음성을 생성하는 중입니다... (처음 쓰는 문구는 20초 내외)');
     try {
-      await api().Announce(text, rate);
+      const res = await api().Announce(text, rate);
       if (!recentAnnounces.includes(text)) {
         recentAnnounces.unshift(text);
         if (recentAnnounces.length > 5) recentAnnounces.pop();
       }
+      if (res.fallback) {
+        toast('TTS 생성 실패 — 내장 음성으로 방송했습니다', 'err');
+        console.warn('TTS fallback:', res.message);
+        renderAnnounce();
+        return;
+      }
+      if (annAudio) annAudio.pause();
+      annAudio = new Audio(res.audioUrl);
+      annAudio.onended = () => renderAnnounce();
+      await annAudio.play();
       toast('방송을 시작했습니다');
       renderAnnounce();
-    } catch (err) { showError(err); }
+    } catch (err) {
+      showError(err);
+      setStatus('방송에 실패했습니다. 설정의 TTS 명령을 확인하세요.');
+      playBtn.disabled = false;
+    } finally {
+      announceBusy = false;
+    }
   };
+
   document.getElementById('ann-play').onclick = () => {
     const text = document.getElementById('ann-text').value.trim();
     if (!text) { toast('방송할 내용을 입력하세요.', 'err'); return; }
     startAnnounce(text);
   };
   document.getElementById('ann-stop').onclick = async () => {
+    if (annAudio) { annAudio.pause(); annAudio = null; }
     await api().StopAnnounce();
     toast('방송을 중지했습니다');
     renderAnnounce();
