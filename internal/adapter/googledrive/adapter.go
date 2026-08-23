@@ -251,6 +251,57 @@ func (a *Adapter) findOrCreateSpreadsheet(d *drive.Service, folderID, name strin
 	return f.Id, f.WebViewLink, nil
 }
 
+// ensureSheet 는 스프레드시트에 해당 이름의 시트가 없으면 추가한다 (이미 있으면 무시).
+func ensureSheet(s *sheets.Service, ssID, title string) {
+	_, _ = s.Spreadsheets.BatchUpdate(ssID, &sheets.BatchUpdateSpreadsheetRequest{
+		Requests: []*sheets.Request{{AddSheet: &sheets.AddSheetRequest{
+			Properties: &sheets.SheetProperties{Title: title},
+		}}},
+	}).Do()
+}
+
+// writeSheet 는 시트를 비운 뒤 값을 기록한다. sheetTitle 이 비어 있으면 첫 번째 시트에 쓴다.
+func writeSheet(s *sheets.Service, ssID, sheetTitle string, rows [][]any) error {
+	rangePrefix := ""
+	if sheetTitle != "" {
+		rangePrefix = "'" + sheetTitle + "'!"
+	}
+	_, _ = s.Spreadsheets.Values.Clear(ssID, rangePrefix+"A1:Z10000", &sheets.ClearValuesRequest{}).Do()
+	_, err := s.Spreadsheets.Values.Update(ssID, rangePrefix+"A1", &sheets.ValueRange{Values: rows}).
+		ValueInputOption("RAW").Do()
+	return err
+}
+
+// UploadMaster 는 "HOLMZ 근로기록" 폴더의 기준정보 스프레드시트(직원·근무 스케줄·예외)를 갱신한다.
+func (a *Adapter) UploadMaster(employees []domain.Employee, shifts []domain.Shift, overrides []domain.ShiftOverride) (string, error) {
+	ctx := context.Background()
+	d, s, err := a.services(ctx)
+	if err != nil {
+		return "", err
+	}
+	folderID, err := a.findOrCreateFolder(d)
+	if err != nil {
+		return "", fmt.Errorf("Drive 폴더 준비 실패: %w", err)
+	}
+	ssID, url, err := a.findOrCreateSpreadsheet(d, folderID, "HOLMZ_직원·근무스케줄")
+	if err != nil {
+		return "", fmt.Errorf("기준정보 시트 준비 실패: %w", err)
+	}
+	// 첫 번째 시트 = 직원, 나머지는 이름 있는 시트로 추가한다.
+	ensureSheet(s, ssID, "근무 스케줄")
+	ensureSheet(s, ssID, "예외")
+	if err := writeSheet(s, ssID, "", employeeRows(employees)); err != nil {
+		return "", fmt.Errorf("직원 기록 실패: %w", err)
+	}
+	if err := writeSheet(s, ssID, "근무 스케줄", shiftRows(shifts)); err != nil {
+		return "", fmt.Errorf("근무 스케줄 기록 실패: %w", err)
+	}
+	if err := writeSheet(s, ssID, "예외", overrideRows(overrides)); err != nil {
+		return "", fmt.Errorf("예외 기록 실패: %w", err)
+	}
+	return url, nil
+}
+
 // UploadDay 는 "HOLMZ 근로기록" 폴더의 일자별 스프레드시트에 근로기록·체크리스트를 기록한다.
 func (a *Adapter) UploadDay(date string, logs []domain.WorkLog, entries []domain.ChecklistEntry) (string, error) {
 	ctx := context.Background()

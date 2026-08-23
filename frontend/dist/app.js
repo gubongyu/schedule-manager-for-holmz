@@ -802,7 +802,8 @@ async function renderAdminSettings() {
     document.getElementById('sync-result').innerHTML = '<p style="margin-top:8px">동기화 중...</p>';
     api().SyncNow().then(res => {
       document.getElementById('sync-result').innerHTML =
-        `<p style="margin-top:8px">✅ ${res.uploaded}건 업로드 완료</p>` +
+        `<p style="margin-top:8px">✅ 근로기록 ${res.uploaded}건 업로드 · 직원/근무스케줄 갱신 완료</p>` +
+        (res.master ? `<p style="font-size:12px"><a href="${res.master}" target="_blank">직원·근무스케줄 시트</a></p>` : '') +
         (res.sheets || []).map(u => `<p style="font-size:12px"><a href="${u}" target="_blank">${u}</a></p>`).join('');
     }, err => {
       document.getElementById('sync-result').innerHTML = '';

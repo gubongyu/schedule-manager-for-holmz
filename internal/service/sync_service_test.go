@@ -10,13 +10,25 @@ import (
 )
 
 type fakeDrive struct {
-	authorized bool
-	uploadErr  error
-	uploads    []string // 호출된 date 기록
+	authorized      bool
+	uploadErr       error
+	uploads         []string // 호출된 date 기록
+	masterEmployees []domain.Employee
+	masterShifts    []domain.Shift
+	masterCalls     int
 }
 
 func (f *fakeDrive) Authorized() bool { return f.authorized }
 func (f *fakeDrive) Authorize() error { f.authorized = true; return nil }
+func (f *fakeDrive) UploadMaster(employees []domain.Employee, shifts []domain.Shift, overrides []domain.ShiftOverride) (string, error) {
+	if f.uploadErr != nil {
+		return "", f.uploadErr
+	}
+	f.masterEmployees, f.masterShifts = employees, shifts
+	f.masterCalls++
+	return "https://sheets.example/master", nil
+}
+
 func (f *fakeDrive) UploadDay(date string, logs []domain.WorkLog, entries []domain.ChecklistEntry) (string, error) {
 	if f.uploadErr != nil {
 		return "", f.uploadErr
@@ -44,7 +56,37 @@ func setupSync(t *testing.T, drive domain.DrivePort) (*SyncService, *sqlite.Work
 			t.Fatal(err)
 		}
 	}
-	return NewSyncService(wl, sqlite.NewChecklistRepo(db), drive), wl
+	if _, err := sqlite.NewShiftRepo(db).List(); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewSyncService(wl, sqlite.NewChecklistRepo(db), drive,
+		sqlite.NewEmployeeRepo(db), sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db), nil)
+	return svc, wl
+}
+
+// 근로기록이 0건이어도 직원·스케줄 기준정보는 항상 동기화되어야 한다.
+func TestSyncUploadsMasterEvenWithoutPendingLogs(t *testing.T) {
+	drive := &fakeDrive{authorized: true}
+	svc, wl := setupSync(t, drive)
+	if _, err := svc.SyncPending(); err != nil { // 1차: pending 2건 처리
+		t.Fatal(err)
+	}
+	res, err := svc.SyncPending() // 2차: pending 0건
+	if err != nil {
+		t.Fatalf("SyncPending: %v", err)
+	}
+	if res.Uploaded != 0 || drive.masterCalls != 2 {
+		t.Errorf("uploaded=%d masterCalls=%d, want 0/2", res.Uploaded, drive.masterCalls)
+	}
+	if res.Master != "https://sheets.example/master" {
+		t.Errorf("Master URL = %q", res.Master)
+	}
+	if len(drive.masterEmployees) != 1 || drive.masterEmployees[0].Name != "A" {
+		t.Errorf("master employees = %+v", drive.masterEmployees)
+	}
+	if pending, _ := wl.ListPending(); len(pending) != 0 {
+		t.Errorf("pending = %d", len(pending))
+	}
 }
 
 func TestSyncPendingNotAuthorized(t *testing.T) {

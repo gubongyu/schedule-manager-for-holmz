@@ -71,6 +71,8 @@ type DrivePort interface {
 	Authorize() error
 	// UploadDay 는 하루치 근로기록·체크리스트를 스프레드시트로 업로드하고 URL을 반환한다.
 	UploadDay(date string, logs []WorkLog, entries []ChecklistEntry) (string, error)
+	// UploadMaster 는 직원 명단·근무 스케줄·예외를 기준정보 스프레드시트로 업로드하고 URL을 반환한다.
+	UploadMaster(employees []Employee, shifts []Shift, overrides []ShiftOverride) (string, error)
 }
 
 // ChecklistRepo 는 체크리스트 저장소 Port다.
