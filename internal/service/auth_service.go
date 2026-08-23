@@ -8,7 +8,19 @@ import (
 	"holmz/internal/domain"
 )
 
-const adminPINKey = "admin_pin"
+const (
+	adminPINKey     = "admin_pin"
+	adminNameKey    = "admin_name"
+	defaultAdmin    = "admin"
+	defaultAdminPIN = "0000000000"
+)
+
+// LoginResult 는 접속 인증 결과다.
+type LoginResult struct {
+	Role         string `json:"role"` // admin | employee
+	EmployeeID   int64  `json:"employeeId"`
+	EmployeeName string `json:"employeeName"`
+}
 
 // AuthService 는 근무자 본인 확인(학번)과 관리자 메뉴 잠금(PIN)을 담당한다.
 // 학번은 관리자 화면에 표시되어야 하는 식별 정보라 평문 비교하고,
@@ -53,6 +65,67 @@ func (s *AuthService) VerifyEmployee(employeeID int64, studentID string) (bool, 
 		return false, err
 	}
 	return e.StudentID == "" || e.StudentID == strings.TrimSpace(studentID), nil
+}
+
+// --- 접속 (이름 + 학번/PIN) ---
+
+// EnsureDefaultAdmin 은 관리자 PIN이 아직 없으면 초기 계정(admin / 0000000000)을 만든다.
+// 이미 PIN이 설정된 뒤에는 아무것도 하지 않는다 (기본값으로 되돌리지 않음).
+func (s *AuthService) EnsureDefaultAdmin() error {
+	has, err := s.HasAdminPIN()
+	if err != nil || has {
+		return err
+	}
+	return s.SetAdminPIN(defaultAdminPIN)
+}
+
+// AdminName 은 관리자 접속 이름을 반환한다 (미설정 시 "admin").
+func (s *AuthService) AdminName() (string, error) {
+	v, err := s.settings.Get(adminNameKey)
+	if err != nil {
+		return "", err
+	}
+	if v == "" {
+		v = defaultAdmin
+	}
+	return v, nil
+}
+
+func (s *AuthService) SetAdminName(name string) error {
+	return s.settings.Set(adminNameKey, strings.TrimSpace(name))
+}
+
+// Login 은 이름+비밀값으로 접속을 인증한다. 관리자는 관리자 이름+PIN,
+// 직원은 등록된 이름+학번으로 확인한다. 실패 시 (nil, nil).
+func (s *AuthService) Login(name, secret string) (*LoginResult, error) {
+	name, secret = strings.TrimSpace(name), strings.TrimSpace(secret)
+	if name == "" || secret == "" {
+		return nil, nil
+	}
+	adminName, err := s.AdminName()
+	if err != nil {
+		return nil, err
+	}
+	if name == adminName {
+		ok, err := s.VerifyAdminPIN(secret)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return &LoginResult{Role: "admin"}, nil
+		}
+		return nil, nil
+	}
+	list, err := s.employees.List(true)
+	if err != nil {
+		return nil, err
+	}
+	for _, e := range list {
+		if e.Name == name && e.StudentID != "" && e.StudentID == secret {
+			return &LoginResult{Role: "employee", EmployeeID: e.ID, EmployeeName: e.Name}, nil
+		}
+	}
+	return nil, nil
 }
 
 // --- 관리자 PIN ---

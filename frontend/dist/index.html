@@ -7,6 +7,16 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<div id="login">
+  <div class="login-card">
+    <div class="brand">HOLMZ</div>
+    <p class="hint">이름과 학번(관리자는 PIN)을 입력해 접속하세요.</p>
+    <input type="text" id="login-name" placeholder="이름" autocomplete="off">
+    <input type="password" id="login-secret" placeholder="학번 / PIN">
+    <button id="login-btn" class="small primary">접속</button>
+    <p id="login-err" class="error" style="display:none"></p>
+  </div>
+</div>
 <nav id="nav">
   <div class="brand">HOLMZ</div>
   <button data-view="dashboard" class="active"><span class="ico">◫</span>대시보드</button>
@@ -28,9 +38,11 @@
     <span id="today"></span>
     <div class="spacer"></div>
     <button id="theme-toggle" class="ghost" title="테마 전환">◐ 다크</button>
+    <span id="whoami" class="hint"></span>
     <label class="emp">근무자
       <select id="employee-select"></select>
     </label>
+    <button id="logout" class="ghost" title="로그아웃">로그아웃</button>
   </header>
   <section id="view"></section>
 </main>

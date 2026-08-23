@@ -38,6 +38,7 @@ type TaskScheduler interface {
 // ShiftRepo 는 근로 스케줄(주간 근무 배치) 저장소 Port다.
 type ShiftRepo interface {
 	Create(s *Shift) error
+	Update(s *Shift) error
 	Delete(id int64) error
 	// List 는 직원 이름을 채워 전체 배치를 반환한다.
 	List() ([]Shift, error)

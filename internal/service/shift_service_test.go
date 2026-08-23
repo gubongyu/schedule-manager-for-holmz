@@ -268,6 +268,28 @@ func TestUpcomingOverridesAndRemove(t *testing.T) {
 	}
 }
 
+func TestShiftUpdate(t *testing.T) {
+	svc, emp := setupShift(t)
+	sh, err := svc.Add(emp.ID, "MON", "09:00", "18:00")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Update(sh.ID, emp.ID, "WED", "13:00", "20:00"); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+	week, _ := svc.Week()
+	if len(week[0].Shifts) != 0 || len(week[2].Shifts) != 1 ||
+		week[2].Shifts[0].Start != "13:00" || week[2].Shifts[0].End != "20:00" {
+		t.Errorf("after update: MON=%v WED=%v", week[0].Shifts, week[2].Shifts)
+	}
+	if err := svc.Update(sh.ID, emp.ID, "WED", "20:00", "13:00"); err == nil {
+		t.Error("invalid time range should fail")
+	}
+	if err := svc.Update(sh.ID, emp.ID, "XXX", "09:00", "10:00"); err == nil {
+		t.Error("invalid weekday should fail")
+	}
+}
+
 func TestShiftRemove(t *testing.T) {
 	svc, emp := setupShift(t)
 	s, err := svc.Add(emp.ID, "TUE", "10:00", "14:00")

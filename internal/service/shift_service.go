@@ -96,6 +96,24 @@ func (s *ShiftService) Add(employeeID int64, weekday, start, end string) (*domai
 
 func (s *ShiftService) Remove(id int64) error { return s.repo.Delete(id) }
 
+// Update 는 기존 배치의 직원·요일·시간을 검증 후 수정한다.
+func (s *ShiftService) Update(id, employeeID int64, weekday, start, end string) error {
+	valid := false
+	for _, d := range shiftWeekdays {
+		if d == weekday {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("잘못된 요일입니다: %s", weekday)
+	}
+	if err := validTime(start, end); err != nil {
+		return err
+	}
+	return s.repo.Update(&domain.Shift{ID: id, EmployeeID: employeeID, Weekday: weekday, Start: start, End: end})
+}
+
 // Week 는 MON..SUN 순서로 7개 요일 전체(빈 요일 포함)의 기본 배치를 반환한다. 각 요일은 시작 시각순.
 func (s *ShiftService) Week() ([]DayShifts, error) {
 	all, err := s.repo.List()

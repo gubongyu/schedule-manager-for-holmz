@@ -17,6 +17,13 @@ func (r *ShiftRepo) Create(s *domain.Shift) error {
 	return err
 }
 
+func (r *ShiftRepo) Update(s *domain.Shift) error {
+	_, err := r.db.SQL.Exec(
+		"UPDATE shifts SET employee_id=?, weekday=?, start_time=?, end_time=? WHERE id=?",
+		s.EmployeeID, s.Weekday, s.Start, s.End, s.ID)
+	return err
+}
+
 func (r *ShiftRepo) Delete(id int64) error {
 	_, err := r.db.SQL.Exec("DELETE FROM shifts WHERE id=?", id)
 	return err

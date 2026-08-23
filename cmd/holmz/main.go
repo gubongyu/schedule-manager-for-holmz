@@ -112,6 +112,11 @@ func main() {
 		})
 	}
 
+	authSvc := service.NewAuthService(employeeRepo, settingsRepo)
+	if err := authSvc.EnsureDefaultAdmin(); err != nil {
+		log.Printf("초기 관리자 계정 생성 실패: %v", err)
+	}
+
 	app = NewApp(
 		employeeRepo,
 		service.NewWorkLogService(worklogRepo, nil),
@@ -122,7 +127,7 @@ func main() {
 		service.NewScheduleService(sqlite.NewScheduleRepo(db), scheduler.New(exePath, nil),
 			filepath.Join(cfgDir, "announce")),
 		playerSvc,
-		service.NewAuthService(employeeRepo, settingsRepo),
+		authSvc,
 		service.NewShiftService(sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db), nil),
 		settingsRepo,
 		filepath.Join(cfgDir, "photos"),

@@ -84,6 +84,82 @@ func TestAdminPINStoredHashed(t *testing.T) {
 	}
 }
 
+func TestEnsureDefaultAdminSeedsOnce(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	svc := NewAuthService(sqlite.NewEmployeeRepo(db), sqlite.NewSettingsRepo(db))
+
+	if err := svc.EnsureDefaultAdmin(); err != nil {
+		t.Fatalf("EnsureDefaultAdmin: %v", err)
+	}
+	// 초기 관리자: admin / 0000000000
+	res, err := svc.Login("admin", "0000000000")
+	if err != nil || res == nil || res.Role != "admin" {
+		t.Fatalf("default admin login = %+v, err=%v", res, err)
+	}
+
+	// 관리자가 PIN을 바꾼 뒤 다시 호출해도 기본값으로 되돌리지 않는다
+	if err := svc.SetAdminPIN("9999"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.EnsureDefaultAdmin(); err != nil {
+		t.Fatal(err)
+	}
+	if res, _ := svc.Login("admin", "0000000000"); res != nil {
+		t.Error("old default PIN should not work after change")
+	}
+	if res, _ := svc.Login("admin", "9999"); res == nil || res.Role != "admin" {
+		t.Error("new PIN login failed")
+	}
+}
+
+func TestLogin(t *testing.T) {
+	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	emps := sqlite.NewEmployeeRepo(db)
+	emp := &domain.Employee{Name: "홍길동", StudentID: "20250001", Active: true}
+	inactive := &domain.Employee{Name: "퇴사자", StudentID: "2019000001", Active: false}
+	for _, e := range []*domain.Employee{emp, inactive} {
+		if err := emps.Create(e); err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc := NewAuthService(emps, sqlite.NewSettingsRepo(db))
+	if err := svc.EnsureDefaultAdmin(); err != nil {
+		t.Fatal(err)
+	}
+
+	// 직원: 이름 + 학번
+	res, err := svc.Login("홍길동", "20250001")
+	if err != nil || res == nil || res.Role != "employee" || res.EmployeeID != emp.ID || res.EmployeeName != "홍길동" {
+		t.Fatalf("employee login = %+v, err=%v", res, err)
+	}
+	// 공백 허용
+	if res, _ := svc.Login(" 홍길동 ", " 20250001 "); res == nil {
+		t.Error("trimmed login should pass")
+	}
+	// 잘못된 학번 / 없는 이름 / 비활성 직원 → nil
+	if res, _ := svc.Login("홍길동", "0000"); res != nil {
+		t.Error("wrong student id should fail")
+	}
+	if res, _ := svc.Login("없는사람", "20250001"); res != nil {
+		t.Error("unknown name should fail")
+	}
+	if res, _ := svc.Login("퇴사자", "2019000001"); res != nil {
+		t.Error("inactive employee should fail")
+	}
+	// 관리자 이름 + 직원 학번 조합 → 실패
+	if res, _ := svc.Login("admin", "20250001"); res != nil {
+		t.Error("admin with wrong pin should fail")
+	}
+}
+
 func TestAdminPIN(t *testing.T) {
 	svc, _, _, _ := setupAuth(t)
 

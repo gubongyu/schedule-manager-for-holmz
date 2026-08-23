@@ -57,14 +57,39 @@ function showModal(html) {
   return ov;
 }
 
-// --- 본인 확인 (학번) / 관리자 PIN ---
-// 세션 동안 검증된 근무자·관리자 상태를 기억한다.
+// --- 접속 세션 ---
+// 앱 시작 시 이름+학번(직원) 또는 이름+PIN(관리자)으로 로그인한다.
+let session = null; // {role: 'admin'|'employee', employeeId, employeeName}
 const verifiedEmployees = new Set();
 let adminVerified = false;
+
+function applySession() {
+  document.body.classList.add('authed');
+  const isAdmin = session.role === 'admin';
+  document.querySelectorAll('#nav [data-view^="admin-"], #nav .nav-sep')
+    .forEach(el => { el.style.display = isAdmin ? '' : 'none'; });
+  document.getElementById('whoami').textContent =
+    isAdmin ? '관리자' : `${session.employeeName} 님`;
+  const sel = document.getElementById('employee-select');
+  if (isAdmin) {
+    sel.disabled = false;
+    adminVerified = true;
+  } else {
+    sel.value = String(session.employeeId);
+    sel.disabled = true;
+    adminVerified = false;
+    verifiedEmployees.add(session.employeeId);
+  }
+}
 
 async function ensureEmployeeVerified() {
   const emp = selectedEmployee();
   if (!emp) { alert('근무자를 선택하세요.'); return null; }
+  // 직원 접속이면 본인만 조작 가능하고 접속 시 이미 검증되었다.
+  if (session?.role === 'employee') {
+    return emp.id === session.employeeId ? emp : null;
+  }
+  // 관리자가 다른 근무자를 대신 조작할 때는 해당 직원의 학번을 확인한다.
   if (verifiedEmployees.has(emp.id)) return emp;
   if (!(await api().EmployeeNeedsVerify(emp.id))) { verifiedEmployees.add(emp.id); return emp; }
   const sid = prompt(`${emp.name} 님의 학번을 입력하세요.`);
@@ -75,13 +100,8 @@ async function ensureEmployeeVerified() {
 }
 
 async function ensureAdminVerified() {
-  if (adminVerified) return true;
-  if (!(await api().HasAdminPIN())) { adminVerified = true; return true; }
-  const pin = prompt('관리자 PIN을 입력하세요.');
-  if (pin === null) return false;
-  if (!(await api().VerifyAdminPIN(pin))) { alert('PIN이 일치하지 않습니다.'); return false; }
-  adminVerified = true;
-  return true;
+  // 접속 시 역할이 정해지므로 별도 PIN 재입력은 없다.
+  return session?.role === 'admin';
 }
 
 // --- 동작 피드백 토스트 (Apple HUD 스타일: 하단 중앙, 자동 사라짐) ---
@@ -241,10 +261,27 @@ function weekCard(week) {
   </div>`;
 }
 
+// 출근 이후 지나간 정각들 중 아직 기록([HH:00])이 없는 시각을 반환한다.
+function missedHours(cur) {
+  if (!cur) return [];
+  const start = new Date(cur.clockIn);
+  const now = new Date();
+  const firstHour = start.getHours() + (start.getMinutes() > 0 ? 1 : 0);
+  const out = [];
+  for (let h = firstHour; h <= now.getHours(); h++) {
+    const tag = `[${String(h).padStart(2, '0')}:00]`;
+    if (!(cur.taskNotes || '').includes(tag)) out.push(h);
+  }
+  return out;
+}
+
 async function renderWorklog() {
   const emp = selectedEmployee();
   if (!emp) { $view.innerHTML = '<h2>근로기록</h2><p>근무자를 선택하세요.</p>'; return; }
   const cur = await api().CurrentShift(emp.id);
+  let taskOptions = [];
+  if (cur) { try { taskOptions = (await api().GetTaskOptions()) || []; } catch (e) { } }
+  const missed = missedHours(cur);
   $view.innerHTML = `
     <h2>근로기록 — ${esc(emp.name)}</h2>
     <div class="card">
@@ -258,6 +295,16 @@ async function renderWorklog() {
         <input type="text" id="note-input" placeholder="수행한 업무 입력" style="flex:1" ${cur ? '' : 'disabled'}>
         <button id="btn-note" class="small primary" ${cur ? '' : 'disabled'}>기록</button>
       </div>
+      ${missed.length ? `
+      <div class="row" style="margin-top:6px">
+        <span class="hint">놓친 정각 기록</span>
+        <select id="missed-hour">${missed.map(h =>
+          `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`).join('')}</select>
+        ${taskOptions.length
+          ? `<select id="missed-task">${taskOptions.map(o => `<option>${esc(o)}</option>`).join('')}</select>`
+          : `<input type="text" id="missed-task" placeholder="업무 내용" style="flex:1">`}
+        <button id="btn-missed" class="small primary">기입</button>
+      </div>` : ''}
       <pre style="white-space:pre-wrap">${esc(cur?.taskNotes || '')}</pre>
     </div>
     <div class="card"><h3>내 근로 이력 (최근 30일)</h3><div id="my-history"></div></div>`;
@@ -277,6 +324,16 @@ async function renderWorklog() {
   document.getElementById('btn-note').onclick = async () => {
     const v = document.getElementById('note-input').value.trim();
     if (v && await ensureEmployeeVerified()) api().AddNote(emp.id, v).then(ok('기록되었습니다', renderWorklog), showError);
+  };
+  const btnMissed = document.getElementById('btn-missed');
+  if (btnMissed) btnMissed.onclick = async () => {
+    const h = String(document.getElementById('missed-hour').value).padStart(2, '0');
+    const task = document.getElementById('missed-task').value.trim();
+    if (!task) { alert('업무 내용을 선택·입력하세요.'); return; }
+    if (await ensureEmployeeVerified()) {
+      api().AddNote(emp.id, `[${h}:00] ${task}`)
+        .then(ok(`${h}:00 업무가 기입되었습니다`, renderWorklog), showError);
+    }
   };
 
   const from = localDateStr(new Date(Date.now() - 30 * 86400e3));
@@ -524,6 +581,21 @@ async function renderAdminShifts() {
           </div>`).join('')}
       </div>
       <div class="card">
+        <h3>배치 목록 (수정·삭제)</h3>
+        ${week.some(d => d.shifts.length) ? `
+        <table><tr><th>직원</th><th>요일</th><th>시작</th><th>종료</th><th style="width:175px"></th></tr>
+        ${week.flatMap(d => d.shifts).map(sh => `<tr data-shift="${sh.id}">
+          <td><select data-f="emp">${emps.map(e =>
+            `<option value="${e.id}" ${e.id === sh.employeeId ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></td>
+          <td><select data-f="day">${Object.entries(DAY_LABELS).map(([v, l]) =>
+            `<option value="${v}" ${v === sh.weekday ? 'selected' : ''}>${l}</option>`).join('')}</select></td>
+          <td><input type="text" data-f="start" value="${sh.start}" style="width:76px"></td>
+          <td><input type="text" data-f="end" value="${sh.end}" style="width:76px"></td>
+          <td><button class="small primary" data-save-shift="${sh.id}">저장</button>
+              <button class="small danger" data-del-shift2="${sh.id}">삭제</button></td></tr>`).join('')}</table>`
+        : '<p class="hint">등록된 배치가 없습니다.</p>'}
+      </div>
+      <div class="card">
         <h3>배치 추가</h3>
         <div class="row" style="margin-top:12px">
           <select id="sh-emp">${emps.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('')}</select>
@@ -592,6 +664,21 @@ async function renderAdminShifts() {
     };
     $view.querySelectorAll('[data-del-shift]').forEach(b => b.onclick = () => {
       api().DeleteShift(Number(b.dataset.delShift)).then(ok('삭제되었습니다', render), showError);
+    });
+    $view.querySelectorAll('[data-del-shift2]').forEach(b => b.onclick = () => {
+      if (confirm('이 배치를 삭제할까요?')) {
+        api().DeleteShift(Number(b.dataset.delShift2)).then(ok('삭제되었습니다', render), showError);
+      }
+    });
+    $view.querySelectorAll('[data-save-shift]').forEach(b => b.onclick = () => {
+      const row = b.closest('tr');
+      api().UpdateShift(
+        Number(row.dataset.shift),
+        Number(row.querySelector('[data-f=emp]').value),
+        row.querySelector('[data-f=day]').value,
+        row.querySelector('[data-f=start]').value.trim(),
+        row.querySelector('[data-f=end]').value.trim(),
+      ).then(ok('저장되었습니다', render), showError);
     });
     const ovType = document.getElementById('ov-type');
     const syncOvTimeInputs = () => {
@@ -749,8 +836,8 @@ async function renderAdminPlayer() {
 }
 
 async function renderAdminSettings() {
-  const [authorized, notice, taskOptions] = await Promise.all([
-    api().GoogleAuthorized(), api().GetNotice(), api().GetTaskOptions()]);
+  const [authorized, notice, taskOptions, adminName] = await Promise.all([
+    api().GoogleAuthorized(), api().GetNotice(), api().GetTaskOptions(), api().AdminName()]);
   $view.innerHTML = `
     <h2>설정 — Google 연동</h2>
     <div class="card">
@@ -772,11 +859,13 @@ async function renderAdminSettings() {
       <div id="sync-result"></div>
     </div>
     <div class="card">
-      <h3>관리자 PIN</h3>
+      <h3>관리자 계정</h3>
       <p class="hint" style="margin:8px 0">
-        설정하면 관리자 메뉴 진입 시 PIN을 요구합니다. 새 PIN을 비워두고 저장하면 잠금이 해제됩니다.</p>
+        앱 접속 화면에서 이 이름과 PIN으로 관리자 로그인합니다. 초기 계정은 admin / 0000000000이니 반드시 변경하세요.
+        비워둔 항목은 그대로 유지됩니다.</p>
       <div class="row">
-        <input type="password" id="pin-cur" placeholder="현재 PIN (처음 설정 시 비움)">
+        <input type="password" id="pin-cur" placeholder="현재 PIN">
+        <input type="text" id="admin-name-new" placeholder="관리자 이름" value="${esc(adminName)}">
         <input type="password" id="pin-new" placeholder="새 PIN">
         <button id="pin-save" class="small primary">저장</button>
       </div>
@@ -808,7 +897,9 @@ async function renderAdminSettings() {
       .then(() => { document.getElementById('tasks-result').textContent = '✅ 저장됨'; }, showError);
   };
   document.getElementById('pin-save').onclick = () => {
-    api().SetAdminPIN(document.getElementById('pin-cur').value, document.getElementById('pin-new').value)
+    api().SetAdminAccount(document.getElementById('pin-cur').value,
+      document.getElementById('admin-name-new').value.trim(),
+      document.getElementById('pin-new').value)
       .then(() => {
         document.getElementById('pin-result').innerHTML = '<p style="margin-top:8px">✅ 저장되었습니다.</p>';
         document.getElementById('pin-cur').value = '';
@@ -872,9 +963,40 @@ document.querySelectorAll('#nav button[data-view]').forEach(b => b.onclick = () 
 document.getElementById('employee-select').onchange = () => navigate(currentView);
 document.getElementById('today').textContent = new Date().toLocaleDateString('ko-KR', { dateStyle: 'full' });
 
-(async function init() {
+async function doLogin() {
+  const name = document.getElementById('login-name').value.trim();
+  const secret = document.getElementById('login-secret').value.trim();
+  const errEl = document.getElementById('login-err');
+  if (!name || !secret) return;
+  try {
+    const res = await api().Login(name, secret);
+    if (!res) {
+      errEl.textContent = '이름 또는 학번(PIN)이 일치하지 않습니다.';
+      errEl.style.display = '';
+      return;
+    }
+    session = res;
+    errEl.style.display = 'none';
+    document.getElementById('login-secret').value = '';
+    await startApp();
+  } catch (err) {
+    errEl.textContent = err?.message || String(err);
+    errEl.style.display = '';
+  }
+}
+
+document.getElementById('login-btn').onclick = doLogin;
+document.getElementById('login-secret').onkeydown = e => { if (e.key === 'Enter') doLogin(); };
+document.getElementById('login-name').onkeydown = e => { if (e.key === 'Enter') document.getElementById('login-secret').focus(); };
+document.getElementById('logout').onclick = () => location.reload();
+document.getElementById('login-name').focus();
+
+let eventsWired = false;
+async function startApp() {
   await refreshEmployees();
-  if (window.runtime) {
+  applySession();
+  if (!eventsWired && window.runtime) {
+    eventsWired = true;
     window.runtime.EventsOn('schedule:action', handleScheduleAction);
     // 재생은 팝업 창이 담당. 여기서는 상태 표시만 갱신한다.
     const refreshPlayerView = () => {
@@ -891,4 +1013,4 @@ document.getElementById('today').textContent = new Date().toLocaleDateString('ko
   const startupAction = await api().GetStartupAction();
   await navigate('dashboard');
   if (startupAction) handleScheduleAction(startupAction);
-})();
+}

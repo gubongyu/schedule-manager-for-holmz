@@ -239,6 +239,33 @@ func (a *App) EmployeeNeedsVerify(employeeID int64) (bool, error) {
 func (a *App) VerifyEmployee(employeeID int64, studentID string) (bool, error) {
 	return a.auth.VerifyEmployee(employeeID, studentID)
 }
+// Login 은 이름+학번(직원) 또는 이름+PIN(관리자)으로 접속을 인증한다. 실패 시 nil.
+func (a *App) Login(name, secret string) (*service.LoginResult, error) {
+	return a.auth.Login(name, secret)
+}
+
+func (a *App) AdminName() (string, error) { return a.auth.AdminName() }
+
+// SetAdminAccount 은 현재 PIN 확인 후 관리자 이름·PIN을 변경한다 (빈 값은 유지).
+func (a *App) SetAdminAccount(currentPIN, newName, newPIN string) error {
+	ok, err := a.auth.VerifyAdminPIN(currentPIN)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return errors.New("현재 관리자 PIN이 일치하지 않습니다")
+	}
+	if newName != "" {
+		if err := a.auth.SetAdminName(newName); err != nil {
+			return err
+		}
+	}
+	if newPIN != "" {
+		return a.auth.SetAdminPIN(newPIN)
+	}
+	return nil
+}
+
 func (a *App) HasAdminPIN() (bool, error) { return a.auth.HasAdminPIN() }
 func (a *App) VerifyAdminPIN(pin string) (bool, error) {
 	return a.auth.VerifyAdminPIN(pin)
@@ -312,6 +339,9 @@ func (a *App) AddShift(employeeID int64, weekday, start, end string) (*domain.Sh
 	return a.shifts.Add(employeeID, weekday, start, end)
 }
 func (a *App) DeleteShift(id int64) error { return a.shifts.Remove(id) }
+func (a *App) UpdateShift(id, employeeID int64, weekday, start, end string) error {
+	return a.shifts.Update(id, employeeID, weekday, start, end)
+}
 
 func (a *App) WeekRoster() ([]service.DayRoster, error)          { return a.shifts.WeekRoster() }
 func (a *App) ShiftWeekTotals() ([]service.EmployeeHours, error) { return a.shifts.WeekTotals() }
