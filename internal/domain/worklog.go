@@ -10,6 +10,7 @@ type WorkLog struct {
 	ID           int64   `json:"id"`
 	EmployeeID   int64   `json:"employeeId"`
 	EmployeeName string  `json:"employeeName"`
+	StudentID    string  `json:"studentId"` // 직원 학번 (조회 시 employees에서 조인)
 	Date         string  `json:"date"` // YYYY-MM-DD
 	ClockIn      string  `json:"clockIn"`
 	ClockOut     string  `json:"clockOut"` // 근무 중이면 빈 문자열

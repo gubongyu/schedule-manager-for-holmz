@@ -11,12 +11,12 @@ type WorkLogRepo struct{ db *DB }
 
 func NewWorkLogRepo(db *DB) *WorkLogRepo { return &WorkLogRepo{db: db} }
 
-const workLogSelect = `SELECT w.id, w.employee_id, e.name, w.date, w.clock_in, w.clock_out, w.task_notes, w.sync_status
+const workLogSelect = `SELECT w.id, w.employee_id, e.name, e.student_id, w.date, w.clock_in, w.clock_out, w.task_notes, w.sync_status
 FROM work_logs w JOIN employees e ON e.id = w.employee_id `
 
 func scanWorkLog(row interface{ Scan(...any) error }) (*domain.WorkLog, error) {
 	w := &domain.WorkLog{}
-	err := row.Scan(&w.ID, &w.EmployeeID, &w.EmployeeName, &w.Date, &w.ClockIn, &w.ClockOut, &w.TaskNotes, &w.SyncStatus)
+	err := row.Scan(&w.ID, &w.EmployeeID, &w.EmployeeName, &w.StudentID, &w.Date, &w.ClockIn, &w.ClockOut, &w.TaskNotes, &w.SyncStatus)
 	if err != nil {
 		return nil, err
 	}

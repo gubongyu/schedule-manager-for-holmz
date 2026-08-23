@@ -267,11 +267,7 @@ func (a *Adapter) UploadDay(date string, logs []domain.WorkLog, entries []domain
 		return "", fmt.Errorf("스프레드시트 준비 실패: %w", err)
 	}
 
-	workRows := [][]any{{"날짜", "직원명", "출근시각", "퇴근시각", "총 근무시간", "업무내용"}}
-	for _, w := range logs {
-		workRows = append(workRows, []any{w.Date, w.EmployeeName, w.ClockIn, w.ClockOut, w.TotalHrs, w.TaskNotes})
-	}
-	if _, err := s.Spreadsheets.Values.Update(ssID, "A1", &sheets.ValueRange{Values: workRows}).
+	if _, err := s.Spreadsheets.Values.Update(ssID, "A1", &sheets.ValueRange{Values: workLogRows(logs)}).
 		ValueInputOption("RAW").Do(); err != nil {
 		return "", fmt.Errorf("근로기록 기록 실패: %w", err)
 	}
