@@ -35,9 +35,9 @@ const fmtTime = (rfc3339) => rfc3339 ? new Date(rfc3339).toLocaleTimeString('ko-
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function selectedEmployee() {
-  const sel = document.getElementById('employee-select');
-  const id = Number(sel.value || 0);
-  return employees.find(e => e.id === id) || null;
+  if (session?.role !== 'employee') return null;
+  return employees.find(e => e.id === session.employeeId)
+    || { id: session.employeeId, name: session.employeeName };
 }
 
 async function refreshEmployees() {
@@ -66,17 +66,18 @@ let adminVerified = false;
 function applySession() {
   document.body.classList.add('authed');
   const isAdmin = session.role === 'admin';
+  // 관리자: 근무자용 메뉴 숨김 / 근무자: 관리자 메뉴 숨김
   document.querySelectorAll('#nav [data-view^="admin-"], #nav .nav-sep')
     .forEach(el => { el.style.display = isAdmin ? '' : 'none'; });
+  document.querySelectorAll('#nav [data-view="worklog"], #nav [data-view="checklist-open"], #nav [data-view="checklist-close"]')
+    .forEach(el => { el.style.display = isAdmin ? 'none' : ''; });
+  // 근무자 선택은 접속 정보로 대체되므로 항상 숨긴다
+  document.querySelector('#topbar label.emp').style.display = 'none';
   document.getElementById('whoami').textContent =
     isAdmin ? '관리자' : `${session.employeeName} 님`;
-  const sel = document.getElementById('employee-select');
   if (isAdmin) {
-    sel.disabled = false;
     adminVerified = true;
   } else {
-    sel.value = String(session.employeeId);
-    sel.disabled = true;
     adminVerified = false;
     verifiedEmployees.add(session.employeeId);
   }
@@ -106,7 +107,7 @@ async function ensureAdminVerified() {
 
 // --- 동작 피드백 토스트 (Apple HUD 스타일: 하단 중앙, 자동 사라짐) ---
 let toastTimer = null;
-function toast(msg, type = 'ok') {
+function toast(msg, type = 'ok', ms = 2200) {
   let el = document.getElementById('toast');
   if (!el) {
     el = document.createElement('div');
@@ -118,7 +119,7 @@ function toast(msg, type = 'ok') {
   el.classList.remove('show');
   requestAnimationFrame(() => el.classList.add('show'));
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), ms);
 }
 
 // ok(msg, next)는 성공 토스트를 띄운 뒤 화면을 갱신하는 then 핸들러를 만든다.
@@ -149,26 +150,6 @@ async function showNoticeIfAny() {
 // 근무 중(출근 상태)이면 매 정각에 작은 알림을 띄워 해당 시간의 업무를 선택하게 한다.
 let lastHourKey = '';
 
-async function showHourlyTaskModal(emp, hour) {
-  let options = [];
-  try { options = (await api().GetTaskOptions()) || []; } catch (e) { }
-  if (!options.length) return;
-  const hh = String(hour).padStart(2, '0');
-  const ov = showModal(`
-    <h3>🕐 ${hh}:00 업무 기록</h3>
-    <p class="hint" style="margin-bottom:10px">${esc(emp.name)} 님, 지금 하고 있는 업무를 선택하세요.</p>
-    <select id="task-sel" style="width:100%">${options.map(o => `<option>${esc(o)}</option>`).join('')}</select>
-    <div class="actions">
-      <button class="small" id="task-skip">닫기</button>
-      <button class="small primary" id="task-save">기록</button>
-    </div>`);
-  ov.querySelector('#task-skip').onclick = () => ov.remove();
-  ov.querySelector('#task-save').onclick = async () => {
-    if (!(await ensureEmployeeVerified())) return;
-    api().AddNote(emp.id, `[${hh}:00] ${ov.querySelector('#task-sel').value}`)
-      .then(() => { ov.remove(); if (currentView === 'worklog') renderWorklog(); }, showError);
-  };
-}
 
 setInterval(async () => {
   const now = new Date();
@@ -182,7 +163,9 @@ setInterval(async () => {
   if (!cur) return;
   lastHourKey = key;
   api().ShowWindow();
-  showHourlyTaskModal(emp, now.getHours());
+  const hh = String(now.getHours()).padStart(2, '0');
+  toast(`${hh}:00 입니다. 근무 내용을 기록해주세요.`, 'ok', 8000);
+  if (currentView === 'worklog') renderWorklog();
 }, 20 * 1000);
 
 // --- 화면 렌더러 ---
@@ -202,7 +185,7 @@ async function renderDashboard() {
     api().TodayChecklist('open'), api().TodayChecklist('close'), api().PlayerStatus(), api().WeekRoster()]);
 
   const shiftHtml = !emp
-    ? '<p class="hint">근무자를 선택하세요.</p>'
+    ? ''
     : cur
       ? `<div style="display:flex;align-items:flex-end;gap:16px">
            <span class="big-num mono">${elapsedSince(cur.clockIn)}</span>
@@ -224,11 +207,11 @@ async function renderDashboard() {
 
   $view.innerHTML = `
     <h2>대시보드</h2>
-    <div class="card">
+    ${emp ? `<div class="card">
       <div class="card-head"><h3>오늘 근무</h3>
         ${cur ? '<span class="pill ok">근무중</span>' : '<span class="pill neu">근무 전</span>'}</div>
       ${shiftHtml}
-    </div>
+    </div>` : ''}
     <div class="card">
       <div class="card-head"><h3>오픈 / 마감 상태</h3></div>
       ${clLine(open, '오픈')}${clLine(close, '마감')}
@@ -277,11 +260,13 @@ function missedHours(cur) {
 
 async function renderWorklog() {
   const emp = selectedEmployee();
-  if (!emp) { $view.innerHTML = '<h2>근로기록</h2><p>근무자를 선택하세요.</p>'; return; }
+  if (!emp) { $view.innerHTML = '<h2>근로기록</h2><p class="hint">근무자 계정으로 접속하세요.</p>'; return; }
   const cur = await api().CurrentShift(emp.id);
   let taskOptions = [];
   if (cur) { try { taskOptions = (await api().GetTaskOptions()) || []; } catch (e) { } }
   const missed = missedHours(cur);
+  const nowHH = String(new Date().getHours()).padStart(2, '0');
+
   $view.innerHTML = `
     <h2>근로기록 — ${esc(emp.name)}</h2>
     <div class="card">
@@ -289,25 +274,28 @@ async function renderWorklog() {
       <button id="btn-out" class="big-btn out" ${cur ? '' : 'disabled'}>퇴근</button>
       ${cur ? `<p style="margin-top:12px">출근 시각: ${fmtTime(cur.clockIn)}</p>` : ''}
     </div>
+    ${cur ? `
     <div class="card">
       <h3>업무 기록</h3>
-      <div class="row">
-        <input type="text" id="note-input" placeholder="수행한 업무 입력" style="flex:1" ${cur ? '' : 'disabled'}>
-        <button id="btn-note" class="small primary" ${cur ? '' : 'disabled'}>기록</button>
+      <p class="hint" style="margin:8px 0">업무 내용을 버튼으로 선택하고, 필요하면 비고를 적은 뒤 기록하세요.</p>
+      ${taskOptions.length
+        ? `<div class="chips" id="task-chips">${taskOptions.map(o =>
+            `<button class="chip" data-task="${esc(o)}">${esc(o)}</button>`).join('')}</div>`
+        : '<p class="hint">등록된 업무 항목이 없습니다. 관리자에게 설정(업무 항목) 등록을 요청하세요.</p>'}
+      <div class="row" style="margin-top:12px">
+        <input type="text" id="note-remark" placeholder="비고 (선택)" style="flex:1">
+        <button id="btn-note" class="small primary" ${taskOptions.length ? '' : 'disabled'}>${nowHH}:00 기록</button>
       </div>
       ${missed.length ? `
       <div class="row" style="margin-top:6px">
         <span class="hint">놓친 정각 기록</span>
         <select id="missed-hour">${missed.map(h =>
           `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`).join('')}</select>
-        ${taskOptions.length
-          ? `<select id="missed-task">${taskOptions.map(o => `<option>${esc(o)}</option>`).join('')}</select>`
-          : `<input type="text" id="missed-task" placeholder="업무 내용" style="flex:1">`}
-        <button id="btn-missed" class="small primary">기입</button>
+        <button id="btn-missed" class="small" ${taskOptions.length ? '' : 'disabled'}>선택한 업무로 기입</button>
       </div>` : ''}
-      <pre style="white-space:pre-wrap">${esc(cur?.taskNotes || '')}</pre>
-    </div>
-    <div class="card"><h3>내 근로 이력 (최근 30일)</h3><div id="my-history"></div></div>`;
+      <pre style="white-space:pre-wrap;margin-top:12px">${esc(cur.taskNotes || '')}</pre>
+    </div>` : ''}
+    <div class="card"><h3>전체 근로 이력 (최근 24시간)</h3><div id="my-history"></div></div>`;
 
   document.getElementById('btn-in').onclick = async () => {
     if (await ensureEmployeeVerified()) {
@@ -321,23 +309,36 @@ async function renderWorklog() {
   document.getElementById('btn-out').onclick = async () => {
     if (await ensureEmployeeVerified()) api().ClockOut(emp.id).then(ok('퇴근이 기록되었습니다', renderWorklog), showError);
   };
-  document.getElementById('btn-note').onclick = async () => {
-    const v = document.getElementById('note-input').value.trim();
-    if (v && await ensureEmployeeVerified()) api().AddNote(emp.id, v).then(ok('기록되었습니다', renderWorklog), showError);
-  };
-  const btnMissed = document.getElementById('btn-missed');
-  if (btnMissed) btnMissed.onclick = async () => {
-    const h = String(document.getElementById('missed-hour').value).padStart(2, '0');
-    const task = document.getElementById('missed-task').value.trim();
-    if (!task) { alert('업무 내용을 선택·입력하세요.'); return; }
-    if (await ensureEmployeeVerified()) {
-      api().AddNote(emp.id, `[${h}:00] ${task}`)
-        .then(ok(`${h}:00 업무가 기입되었습니다`, renderWorklog), showError);
-    }
-  };
 
-  const from = localDateStr(new Date(Date.now() - 30 * 86400e3));
-  const logs = (await api().WorkLogHistory(from, todayStr(), emp.id)) || [];
+  // 업무 버튼: 하나만 선택
+  let selectedTask = '';
+  document.querySelectorAll('#task-chips .chip').forEach(c => c.onclick = () => {
+    selectedTask = c.dataset.task;
+    document.querySelectorAll('#task-chips .chip').forEach(x => x.classList.toggle('active', x === c));
+  });
+
+  // 선택한 업무를 [HH:00] 행으로 기록하고, 비고는 같은 행의 비고로 붙는다.
+  const recordAt = async (hh) => {
+    if (!selectedTask) { toast('업무 내용을 먼저 선택하세요.', 'err'); return; }
+    if (!(await ensureEmployeeVerified())) return;
+    try {
+      await api().AddNote(emp.id, `[${hh}:00] ${selectedTask}`);
+      const remark = document.getElementById('note-remark').value.trim();
+      if (remark) await api().AddNote(emp.id, remark);
+      toast(`${hh}:00 ${selectedTask} 기록되었습니다`);
+      renderWorklog();
+    } catch (err) { showError(err); }
+  };
+  const btnNote = document.getElementById('btn-note');
+  if (btnNote) btnNote.onclick = () => recordAt(nowHH);
+  const btnMissed = document.getElementById('btn-missed');
+  if (btnMissed) btnMissed.onclick = () =>
+    recordAt(String(document.getElementById('missed-hour').value).padStart(2, '0'));
+
+  // 전체 근무자의 최근 24시간 이력
+  const from = localDateStr(new Date(Date.now() - 86400e3));
+  const logs = ((await api().WorkLogHistory(from, todayStr(), 0)) || [])
+    .filter(w => new Date(w.clockIn).getTime() >= Date.now() - 86400e3);
   document.getElementById('my-history').innerHTML = historyTable(logs);
 }
 
@@ -562,8 +563,9 @@ const hourOptions = (selected) => Array.from({ length: 24 }, (_, h) => {
 
 async function renderAdminShifts() {
   const render = async () => {
-    const [week, emps, totals, overrides] = await Promise.all([
-      api().ShiftWeek(), api().ListEmployees(true), api().ShiftWeekTotals(), api().ShiftOverrides()]);
+    const [week, emps, totals, overrides] = (await Promise.all([
+      api().ShiftWeek(), api().ListEmployees(true), api().ShiftWeekTotals(), api().ShiftOverrides()]))
+      .map(v => v || []);
     const today = todayWeekday();
     const maxHours = Math.max(...totals.map(t => t.hours), 1);
     $view.innerHTML = `

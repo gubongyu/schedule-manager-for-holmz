@@ -175,6 +175,16 @@ button:focus-visible, input:focus-visible, select:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }
 
+/* --- 업무 선택 칩 --- */
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  padding: 10px 18px; border: 1px solid var(--border2); border-radius: 999px;
+  background: var(--card); color: var(--text);
+  font: 500 13px/1 inherit; letter-spacing: inherit; cursor: pointer;
+}
+.chip:hover { background: var(--accent-bg); color: var(--accent-text); border-color: var(--accent); }
+.chip.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+
 /* --- 표 --- */
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; font-size: 12.5px; }
