@@ -40,6 +40,21 @@ func workLogRows(logs []domain.WorkLog) [][]any {
 		row := func(timeHM, task, note string) []any {
 			return []any{date, "학생", w.StudentID, w.EmployeeName, timeHM, task, note}
 		}
+		// 자유 메모(시각 없는 줄)를 직전 행의 비고에 합친다 (예시 시트와 동일하게 한 셀에 여러 줄).
+		attachNote := func(firstIdx int, text string) {
+			if len(rows) <= firstIdx {
+				rows = append(rows, row("", "", text))
+				return
+			}
+			last := rows[len(rows)-1]
+			if prev, _ := last[6].(string); prev == "" {
+				last[6] = text
+			} else {
+				last[6] = prev + "\n" + text
+			}
+		}
+
+		firstIdx := len(rows) // 이 근무 기록의 행이 시작되는 위치
 		if w.ClockIn != "" {
 			rows = append(rows, row(clockHM(w.ClockIn), "출근", ""))
 		}
@@ -48,11 +63,11 @@ func workLogRows(logs []domain.WorkLog) [][]any {
 			if line == "" {
 				continue
 			}
-			timeHM := ""
 			if m := noteTimeRe.FindStringSubmatch(line); m != nil {
-				timeHM, line = m[1], m[2]
+				rows = append(rows, row(m[1], m[2], ""))
+			} else {
+				attachNote(firstIdx, line)
 			}
-			rows = append(rows, row(timeHM, line, ""))
 		}
 		if w.ClockOut != "" {
 			rows = append(rows, row(clockHM(w.ClockOut), "퇴근", fmt.Sprintf("총 %v시간", w.TotalHrs)))

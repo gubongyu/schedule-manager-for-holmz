@@ -267,6 +267,8 @@ func (a *Adapter) UploadDay(date string, logs []domain.WorkLog, entries []domain
 		return "", fmt.Errorf("스프레드시트 준비 실패: %w", err)
 	}
 
+	// 재업로드 시 행 수가 줄어도 이전 내용이 남지 않도록 먼저 비운다.
+	_, _ = s.Spreadsheets.Values.Clear(ssID, "A1:Z10000", &sheets.ClearValuesRequest{}).Do()
 	if _, err := s.Spreadsheets.Values.Update(ssID, "A1", &sheets.ValueRange{Values: workLogRows(logs)}).
 		ValueInputOption("RAW").Do(); err != nil {
 		return "", fmt.Errorf("근로기록 기록 실패: %w", err)
@@ -287,6 +289,7 @@ func (a *Adapter) UploadDay(date string, logs []domain.WorkLog, entries []domain
 		}
 		clRows = append(clRows, []any{typ, e.Name, e.Required, e.Checked, e.CheckedAt, e.CheckedBy, e.PhotoPath})
 	}
+	_, _ = s.Spreadsheets.Values.Clear(ssID, "'체크리스트'!A1:Z10000", &sheets.ClearValuesRequest{}).Do()
 	if _, err := s.Spreadsheets.Values.Update(ssID, "'체크리스트'!A1", &sheets.ValueRange{Values: clRows}).
 		ValueInputOption("RAW").Do(); err != nil {
 		return "", fmt.Errorf("체크리스트 기록 실패: %w", err)
