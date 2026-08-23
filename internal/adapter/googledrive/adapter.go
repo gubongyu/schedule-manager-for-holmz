@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -26,19 +27,21 @@ import (
 	"holmz/internal/domain"
 )
 
-const (
-	folderName  = "HOLMZ 근로기록"
-	authTimeout = 3 * time.Minute
-)
+const folderName = "HOLMZ 근로기록"
+
+// authTimeout 은 브라우저 인증 응답 대기 한도다 (테스트에서 단축을 위해 변수).
+var authTimeout = 3 * time.Minute
 
 type Adapter struct {
 	configDir string
 	openURL   func(string) error
 	sealer    secret.Sealer
 
-	mu     sync.Mutex
+	mu     sync.Mutex // config/token 접근 보호 (짧게만 잡는다)
 	config *oauth2.Config
 	token  *oauth2.Token
+
+	authBusy atomic.Bool // 인증 중복 실행 방지
 }
 
 // New 는 설정 디렉터리의 credentials.json 과 암호화 토큰(token.enc)을 로드해 어댑터를 만든다.
@@ -116,17 +119,33 @@ func (a *Adapter) Authorized() bool {
 	return a.config != nil && a.token != nil
 }
 
+// authResult 는 루프백 리다이렉트로 전달된 결과다.
+type authResult struct {
+	code   string
+	errMsg string // Google이 전달한 오류 (access_denied 등)
+}
+
 // Authorize 는 루프백 리다이렉트 방식의 OAuth 2.0 인증을 수행한다.
+// 브라우저 응답을 기다리는 동안 뮤텍스를 잡지 않으므로 다른 호출(Authorized 등)이 막히지 않고,
+// 이미 인증이 진행 중이면 즉시 오류를 반환한다.
 func (a *Adapter) Authorize() error {
+	if !a.authBusy.CompareAndSwap(false, true) {
+		return fmt.Errorf("인증이 이미 진행 중입니다. 브라우저 창을 확인하거나 잠시 후 다시 시도하세요")
+	}
+	defer a.authBusy.Store(false)
+
 	a.mu.Lock()
-	defer a.mu.Unlock()
 	if a.config == nil {
 		cfg, err := a.loadConfig()
 		if err != nil {
+			a.mu.Unlock()
 			return err
 		}
 		a.config = cfg
 	}
+	cfg := *a.config
+	a.mu.Unlock()
+
 	if a.openURL == nil {
 		return fmt.Errorf("브라우저 열기 함수가 설정되지 않았습니다")
 	}
@@ -135,33 +154,45 @@ func (a *Adapter) Authorize() error {
 	if err != nil {
 		return err
 	}
-	codeCh := make(chan string, 1)
+	resCh := make(chan authResult, 1)
 	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "HOLMZ 인증이 완료되었습니다. 이 창을 닫아주세요.")
-		codeCh <- r.URL.Query().Get("code")
+		res := authResult{code: r.URL.Query().Get("code"), errMsg: r.URL.Query().Get("error")}
+		if res.errMsg != "" {
+			fmt.Fprint(w, "인증이 거부되었습니다. 이 창을 닫고 앱에서 다시 시도해주세요.")
+		} else {
+			fmt.Fprint(w, "HOLMZ 인증이 완료되었습니다. 이 창을 닫아주세요.")
+		}
+		select {
+		case resCh <- res:
+		default:
+		}
 	})}
 	go srv.Serve(ln)
 	defer srv.Close()
 
-	cfg := *a.config
 	cfg.RedirectURL = "http://" + ln.Addr().String()
 	if err := a.openURL(cfg.AuthCodeURL("state", oauth2.AccessTypeOffline)); err != nil {
 		return err
 	}
 
 	select {
-	case code := <-codeCh:
-		if code == "" {
+	case res := <-resCh:
+		if res.errMsg != "" {
+			return fmt.Errorf("Google이 인증을 거부했습니다 (%s). OAuth 동의 화면의 사용자 유형·테스트 사용자 설정을 확인하세요", res.errMsg)
+		}
+		if res.code == "" {
 			return fmt.Errorf("인증 코드가 전달되지 않았습니다")
 		}
-		tok, err := cfg.Exchange(context.Background(), code)
+		tok, err := cfg.Exchange(context.Background(), res.code)
 		if err != nil {
-			return err
+			return fmt.Errorf("토큰 교환 실패: %w", err)
 		}
+		a.mu.Lock()
 		a.token = tok
+		a.mu.Unlock()
 		return a.saveToken(tok)
 	case <-time.After(authTimeout):
-		return fmt.Errorf("인증 대기 시간이 초과되었습니다 (3분)")
+		return fmt.Errorf("인증 대기 시간이 초과되었습니다. 다시 시도해주세요")
 	}
 }
 
