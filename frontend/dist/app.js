@@ -1048,13 +1048,21 @@ async function renderSubRequest() {
 }
 
 // 안내 방송: 입력한 문구를 tts_program(MeloTTS)으로 wav 합성해 즉시 송출한다.
-// 같은 문구는 캐시되어 두 번째부터 즉시 재생된다.
-const recentAnnounces = [];
+// 생성한 음성은 파일로 남아 목록에서 다시 방송하거나 삭제할 수 있다.
 let annAudio = null;
 let announceBusy = false;
 
+const fmtBytes = (n) => n >= 1048576 ? `${(n / 1048576).toFixed(1)}MB` : `${Math.round(n / 1024)}KB`;
+const fmtDateTime = (iso) => {
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
+};
+
 async function renderAnnounce() {
   const playing = annAudio && !annAudio.paused;
+  let saved = [];
+  try { saved = (await api().ListAnnouncements()) || []; } catch (e) { }
+
   $view.innerHTML = `
     <h2>안내 방송</h2>
     <div class="card">
@@ -1075,19 +1083,37 @@ async function renderAnnounce() {
       <p id="ann-status" class="hint" style="margin-top:8px">
         한국어/영어는 자동 인식됩니다. 처음 쓰는 문구는 음성 생성에 20초 내외가 걸리고, 같은 문구는 이후 즉시 재생됩니다.</p>
     </div>
-    ${recentAnnounces.length ? `<div class="card">
-      <h3>최근 방송</h3>
-      <p class="hint" style="margin:8px 0">생성된 음성은 %APPDATA%\\HOLMZ\\announce 에 저장되어, 스케줄의 "음성 재생"에서도 고를 수 있습니다.</p>
-      <div style="display:flex;flex-direction:column;gap:8px;margin-top:10px">
-        ${recentAnnounces.map((t, i) => `
-          <div class="row" style="margin:0">
-            <span style="flex:1;font-size:13px">${esc(t)}</span>
-            <button class="small" data-replay="${i}">다시 방송</button>
-          </div>`).join('')}
-      </div>
-    </div>` : ''}`;
+    <div class="card">
+      <div class="card-head"><h3>생성한 안내문</h3>
+        <span class="hint">${saved.length ? `${saved.length}건 · ${fmtBytes(saved.reduce((a, c) => a + c.size, 0))}` : ''}</span></div>
+      <p class="hint" style="margin:8px 0">
+        생성된 음성은 <b>%APPDATA%\\HOLMZ\\announce</b> 에 저장되어 스케줄의 "음성 재생"에서도 고를 수 있습니다.
+        더 이상 쓰지 않는 안내문은 삭제해 공간을 정리하세요.</p>
+      ${saved.length ? `<table>
+        <tr><th>문구</th><th style="width:130px">생성</th><th style="width:70px">용량</th><th style="width:190px"></th></tr>
+        ${saved.map((a, i) => `<tr>
+          <td>${esc(a.text) || '<span class="hint">(문구 정보 없음)</span>'}</td>
+          <td class="hint">${fmtDateTime(a.createdAt)}</td>
+          <td class="mono hint">${fmtBytes(a.size)}</td>
+          <td><button class="small primary" data-replay="${i}">다시 방송</button>
+              <button class="small danger" data-del-ann="${i}">삭제</button></td></tr>`).join('')}
+      </table>` : '<p class="hint">아직 생성한 안내문이 없습니다.</p>'}
+    </div>`;
 
   const setStatus = (msg) => { document.getElementById('ann-status').textContent = msg; };
+
+  // 이미 만들어 둔 음성을 그대로 재생한다 (합성 없이 즉시).
+  const playSaved = async (item) => {
+    try {
+      const url = await api().AudioDataURL(item.wavPath);
+      if (annAudio) annAudio.pause();
+      annAudio = new Audio(url);
+      annAudio.onended = () => renderAnnounce();
+      await annAudio.play();
+      toast('방송을 시작했습니다');
+      renderAnnounce();
+    } catch (err) { showError(err); }
+  };
 
   const startAnnounce = async (text) => {
     if (announceBusy) { toast('음성을 생성하는 중입니다. 잠시만 기다려주세요.', 'err'); return; }
@@ -1098,10 +1124,6 @@ async function renderAnnounce() {
     setStatus('음성을 생성하는 중입니다... (처음 쓰는 문구는 20초 내외)');
     try {
       const res = await api().Announce(text, rate);
-      if (!recentAnnounces.includes(text)) {
-        recentAnnounces.unshift(text);
-        if (recentAnnounces.length > 5) recentAnnounces.pop();
-      }
       if (res.fallback) {
         toast('TTS 생성 실패 — 내장 음성으로 방송했습니다', 'err');
         console.warn('TTS fallback:', res.message);
@@ -1135,7 +1157,12 @@ async function renderAnnounce() {
     renderAnnounce();
   };
   $view.querySelectorAll('[data-replay]').forEach(b => b.onclick = () =>
-    startAnnounce(recentAnnounces[Number(b.dataset.replay)]));
+    playSaved(saved[Number(b.dataset.replay)]));
+  $view.querySelectorAll('[data-del-ann]').forEach(b => b.onclick = () => {
+    const item = saved[Number(b.dataset.delAnn)];
+    if (!confirm(`이 안내문을 삭제할까요?\n\n${item.text || item.wavPath}`)) return;
+    api().DeleteAnnouncement(item.wavPath).then(ok('삭제되었습니다', renderAnnounce), showError);
+  });
 }
 
 const views = {

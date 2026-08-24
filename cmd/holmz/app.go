@@ -113,6 +113,22 @@ func (a *App) SetTTSCommand(cmd string) error {
 	return a.settings.Set("tts_command", strings.TrimSpace(cmd))
 }
 
+// ListAnnouncements 는 생성해 둔 안내 방송 목록을 최신순으로 반환한다.
+func (a *App) ListAnnouncements() ([]speech.Cached, error) {
+	if a.synth == nil {
+		return nil, errors.New("TTS 합성기가 초기화되지 않았습니다")
+	}
+	return a.synth.List()
+}
+
+// DeleteAnnouncement 는 생성해 둔 안내 방송 음성을 삭제한다.
+func (a *App) DeleteAnnouncement(wavPath string) error {
+	if a.synth == nil {
+		return errors.New("TTS 합성기가 초기화되지 않았습니다")
+	}
+	return a.synth.Delete(wavPath)
+}
+
 func (a *App) StopAnnounce()          { a.announcer.Stop() }
 func (a *App) AnnounceSpeaking() bool { return a.announcer.Speaking() }
 

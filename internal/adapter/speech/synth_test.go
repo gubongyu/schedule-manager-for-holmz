@@ -105,3 +105,68 @@ func TestWavForIntegration(t *testing.T) {
 	}
 	t.Logf("생성됨: %s (%d bytes)", wav, info.Size())
 }
+
+func TestListAndDeleteCached(t *testing.T) {
+	dir := t.TempDir()
+	s := NewSynthesizer(dir, func() string { return "fake {out}" })
+	s.run = func(command string) error {
+		out := strings.TrimPrefix(command, "fake ")
+		return os.WriteFile(out, []byte("RIFFfake"), 0o644)
+	}
+
+	first, err := s.WavFor("첫 번째 안내", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.WavFor("두 번째 안내", 1); err != nil {
+		t.Fatal(err)
+	}
+
+	list, err := s.List()
+	if err != nil || len(list) != 2 {
+		t.Fatalf("List = %+v (err=%v), want 2", list, err)
+	}
+	texts := map[string]bool{list[0].Text: true, list[1].Text: true}
+	if !texts["첫 번째 안내"] || !texts["두 번째 안내"] {
+		t.Errorf("문구가 복원되지 않았습니다: %+v", list)
+	}
+	if list[0].Size == 0 || list[0].WavPath == "" {
+		t.Errorf("항목 정보 누락: %+v", list[0])
+	}
+
+	if err := s.Delete(first); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if list, _ = s.List(); len(list) != 1 || list[0].Text != "두 번째 안내" {
+		t.Errorf("삭제 후 목록 = %+v", list)
+	}
+	// 텍스트 파일도 함께 지워져야 재생성 시 혼선이 없다
+	if _, err := os.Stat(strings.TrimSuffix(first, ".wav") + ".txt"); !os.IsNotExist(err) {
+		t.Errorf("txt 파일이 남아 있습니다: %v", err)
+	}
+}
+
+func TestDeleteRejectsOutsidePaths(t *testing.T) {
+	dir := t.TempDir()
+	s := NewSynthesizer(dir, func() string { return "" })
+
+	outside := filepath.Join(t.TempDir(), "tts_other.wav")
+	if err := os.WriteFile(outside, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(outside); err == nil {
+		t.Error("캐시 폴더 밖 파일은 삭제되면 안 됩니다")
+	}
+	if _, err := os.Stat(outside); err != nil {
+		t.Errorf("외부 파일이 삭제되었습니다: %v", err)
+	}
+
+	// 캐시 폴더 안이라도 TTS 캐시 파일이 아니면 거부한다
+	other := filepath.Join(dir, "schedule_1.wpl")
+	if err := os.WriteFile(other, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete(other); err == nil {
+		t.Error("TTS 캐시가 아닌 파일은 삭제되면 안 됩니다")
+	}
+}
