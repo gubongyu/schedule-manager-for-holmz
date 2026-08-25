@@ -67,6 +67,7 @@ function applySession() {
   document.body.classList.add('authed');
   const isAdmin = session.role === 'admin';
   // 관리자: 근무자용 메뉴 숨김 / 근무자: 관리자 메뉴 숨김
+  // (안내 방송·스케줄 관리는 양쪽 모두 사용하는 공용 메뉴라 숨기지 않는다)
   document.querySelectorAll('#nav [data-view^="admin-"], #nav .nav-sep')
     .forEach(el => { el.style.display = isAdmin ? '' : 'none'; });
   document.querySelectorAll('#nav [data-view="worklog"], #nav [data-view="checklist-open"], #nav [data-view="checklist-close"], #nav [data-view="sub-request"], #nav [data-view="player"]')
@@ -756,7 +757,7 @@ async function renderAdminShifts() {
   await render();
 }
 
-async function renderAdminSchedule() {
+async function renderSchedule() {
   const render = async () => {
     const list = (await api().ListSchedules()) || [];
     $view.innerHTML = `
@@ -1176,7 +1177,7 @@ const views = {
   'admin-worklog': renderAdminWorklog,
   'admin-shifts': renderAdminShifts,
   'admin-checklist': renderAdminChecklist,
-  'admin-schedule': renderAdminSchedule,
+  'schedule': renderSchedule,
   'admin-player': renderAdminPlayer,
   'admin-employees': renderAdminEmployees,
   'admin-settings': renderAdminSettings,
