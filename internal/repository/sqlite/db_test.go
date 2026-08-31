@@ -17,7 +17,7 @@ func openTestDB(t *testing.T) *DB {
 
 func TestOpenCreatesSchema(t *testing.T) {
 	db := openTestDB(t)
-	for _, table := range []string{"employees", "work_logs", "checklist_templates", "checklist_entries", "checklist_completions", "schedules", "playlist_items", "shifts", "shift_overrides", "app_settings"} {
+	for _, table := range []string{"employees", "work_logs", "checklist_templates", "checklist_entries", "checklist_completions", "schedules", "playlist_items", "shifts", "shift_overrides", "app_settings", "rentals", "lost_items"} {
 		var n int
 		err := db.SQL.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?", table).Scan(&n)
 		if err != nil || n != 1 {

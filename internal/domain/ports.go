@@ -29,6 +29,15 @@ type ScheduleRepo interface {
 	List() ([]ScheduleItem, error)
 }
 
+// AudioRepeater 는 같은 안내 음성을 연속으로 재생하도록 준비한다.
+// 스케줄러에 넘길 재생 대상(재생목록 등)을 만들어 주며, 파일 형식은 어댑터가 정한다.
+type AudioRepeater interface {
+	// Repeat 는 audioPath 를 count 회 이어서 재생할 대상 경로를 만들어 반환한다.
+	Repeat(id int64, audioPath string, count int) (string, error)
+	// Discard 는 준비물을 정리한다 (없으면 무시).
+	Discard(id int64) error
+}
+
 // TaskScheduler 는 OS 작업 스케줄러 연동 Port다.
 type TaskScheduler interface {
 	Register(s ScheduleItem) error
@@ -50,6 +59,24 @@ type ShiftOverrideRepo interface {
 	Delete(id int64) error
 	// ListRange 는 기간(YYYY-MM-DD, 양끝 포함)의 예외를 직원 이름과 함께 반환한다.
 	ListRange(from, to string) ([]ShiftOverride, error)
+}
+
+// RentalRepo 는 HDMI 대여 기록 저장소 Port다.
+type RentalRepo interface {
+	Create(r *Rental) error
+	Update(r *Rental) error
+	Delete(id int64) error
+	// List 는 최근 기록부터 반환한다.
+	List() ([]Rental, error)
+}
+
+// LostItemRepo 는 분실물(습득·접수) 기록 저장소 Port다.
+type LostItemRepo interface {
+	Create(l *LostItem) error
+	Update(l *LostItem) error
+	Delete(id int64) error
+	// List 는 유형(found|reported)별로 최근 기록부터 반환한다. typ 이 빈 문자열이면 전체.
+	List(typ string) ([]LostItem, error)
 }
 
 // SettingsRepo 는 앱 설정(키-값) 저장소 Port다. 없는 키는 빈 값을 반환한다.
@@ -74,6 +101,16 @@ type DrivePort interface {
 	UploadDay(date string, logs []WorkLog, entries []ChecklistEntry) (string, error)
 	// UploadMaster 는 직원 명단·근무 스케줄·예외를 기준정보 스프레드시트로 업로드하고 URL을 반환한다.
 	UploadMaster(employees []Employee, shifts []Shift, overrides []ShiftOverride) (string, error)
+	// UploadDesk 는 데스크 업무(HDMI 대여·분실물)를 전용 스프레드시트로 업로드하고 URL을 반환한다.
+	UploadDesk(rentals []Rental, lostItems []LostItem) (string, error)
+}
+
+// ReleaseSource 는 새 버전 정보를 가져오는 Port다 (GitHub Releases 등).
+type ReleaseSource interface {
+	// Latest 는 최신 릴리스를 반환한다. 릴리스가 하나도 없으면 (nil, nil).
+	Latest() (*Release, error)
+	// Download 는 실행 파일을 dst 경로에 내려받는다.
+	Download(url, dst string) error
 }
 
 // ChecklistRepo 는 체크리스트 저장소 Port다.

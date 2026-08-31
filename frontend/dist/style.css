@@ -206,6 +206,13 @@ table input[type=text], table input[type=number] { padding: 6px 8px; font-size: 
   background: var(--ok-bg); color: var(--ok-text);
   padding: 12px 16px; border-radius: 12px; margin-bottom: 14px; font-size: 13px; font-weight: 500;
 }
+#update-bar {
+  display: none; align-items: center; gap: 10px;
+  background: var(--ok-bg); color: var(--ok-text);
+  padding: 10px 16px; font-size: 13px; font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+#update-bar .spacer { flex: 1; }
 .fatal-banner {
   background: var(--warn-bg); color: var(--warn-text);
   padding: 12px 16px; border-radius: 12px; margin-bottom: 14px; font-size: 13px; font-weight: 500;
@@ -318,3 +325,15 @@ body.authed #login { display: none; }
   }
   #toast { transition: opacity .18s ease, transform .18s ease; }
 }
+
+/* 동기화 항목 토글 목록 */
+.sync-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px; margin-top: 8px;
+  border: 1px solid var(--line); border-radius: 10px;
+  cursor: pointer; transition: background .15s, border-color .15s;
+}
+.sync-item:hover { background: var(--ghost); }
+.sync-item input { margin-top: 2px; }
+.sync-item.off { opacity: .5; cursor: not-allowed; }
+.sync-item.off:hover { background: none; }

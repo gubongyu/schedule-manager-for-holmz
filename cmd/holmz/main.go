@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -13,12 +14,25 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"holmz/frontend"
+	"holmz/internal/adapter/githubrelease"
 	"holmz/internal/adapter/googledrive"
+	"holmz/internal/adapter/mediafile"
 	"holmz/internal/adapter/popup"
 	"holmz/internal/adapter/scheduler"
 	"holmz/internal/adapter/speech"
+	"holmz/internal/adapter/wmplaylist"
 	"holmz/internal/repository/sqlite"
 	"holmz/internal/service"
+)
+
+// version 은 빌드 시 -ldflags "-X main.version=v1.2.3" 로 주입한다.
+// 주입하지 않은 개발 빌드는 "dev" 로 남고, 이 경우 업데이트 확인을 하지 않는다.
+var version = service.DevVersion
+
+// 업데이트를 배포하는 GitHub 저장소.
+const (
+	updateOwner = "gubongyu"
+	updateRepo  = "schedule-manager-for-holmz"
 )
 
 func configDir() string {
@@ -35,6 +49,7 @@ func configDir() string {
 
 func main() {
 	action := flag.String("action", "", "스케줄 트리거 동작 (notify-open|notify-close|upload|play-start|play-stop)")
+	awaitExit := flag.Bool("await-exit", false, "업데이트 직후 실행됨 — 이전 프로세스 종료를 기다린다")
 	flag.Parse()
 
 	cfgDir := configDir()
@@ -80,6 +95,13 @@ func main() {
 		case "player:stop", "player:fatal":
 			popupSrv.Broadcast("stop")
 			launcher.Kill()
+		case "player:volume":
+			if len(data) > 0 {
+				popupSrv.Broadcast(fmt.Sprintf("volume:%v", data[0]))
+			}
+		case "player:resume":
+			// 일시정지·자동재생 차단으로 멈춘 화면을 재로드 전에 가볍게 깨운다.
+			popupSrv.Broadcast("resume")
 		case "player:reload":
 			// 프로세스 생존 여부는 신뢰할 수 없다 (Edge는 창이 닫혀도 백그라운드 프로세스가
 			// 남을 수 있음). 재생 페이지가 실제 접속 중인지(SSE)로 판단한다.
@@ -94,7 +116,13 @@ func main() {
 		}
 	}
 
-	playerSvc := service.NewPlayerService(sqlite.NewPlaylistRepo(db), emit, nil)
+	updateSvc := service.NewUpdateService(githubrelease.New(updateOwner, updateRepo), version)
+	// 업데이트로 새로 실행된 경우, 이전 프로세스가 끝나야 싱글 인스턴스 잠금이 풀린다.
+	if *awaitExit {
+		updateSvc.WaitForPredecessor()
+	}
+
+	playerSvc := service.NewPlayerService(sqlite.NewPlaylistRepo(db), sqlite.NewSettingsRepo(db), emit, nil)
 	if srv, err := popup.StartServer(playerSvc); err != nil {
 		log.Printf("재생 팝업 서버 시작 실패: %v", err)
 	} else {
@@ -113,34 +141,55 @@ func main() {
 		})
 	}
 
+	settingsSvc := service.NewSettingsService(settingsRepo)
 	authSvc := service.NewAuthService(employeeRepo, settingsRepo)
 	if err := authSvc.EnsureDefaultAdmin(); err != nil {
 		log.Printf("초기 관리자 계정 생성 실패: %v", err)
 	}
 
-	app = NewApp(
-		employeeRepo,
-		service.NewWorkLogService(worklogRepo, nil),
-		checklistSvc,
-		service.NewSyncService(worklogRepo, checklistRepo, drive,
-			employeeRepo, sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db), nil),
-		drive,
-		service.NewScheduleService(sqlite.NewScheduleRepo(db), scheduler.New(exePath, nil),
-			filepath.Join(cfgDir, "announce")),
-		playerSvc,
-		authSvc,
-		service.NewShiftService(sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db), nil),
-		settingsRepo,
-		filepath.Join(cfgDir, "photos"),
-		*action,
-	)
+	announceDir := filepath.Join(cfgDir, "announce")
+	rentalRepo := sqlite.NewRentalRepo(db)
+	lostItemRepo := sqlite.NewLostItemRepo(db)
+	shiftRepo := sqlite.NewShiftRepo(db)
+	overrideRepo := sqlite.NewShiftOverrideRepo(db)
 
-	app.SetSynthesizer(speech.NewSynthesizer(filepath.Join(cfgDir, "announce"), func() string {
-		v, err := settingsRepo.Get("tts_command")
+	app = NewApp(Deps{
+		Employees: employeeRepo,
+		WorkLog:   service.NewWorkLogService(worklogRepo, nil),
+		Checklist: checklistSvc,
+		Sync: service.NewSyncService(worklogRepo, checklistRepo, drive,
+			employeeRepo, shiftRepo, overrideRepo, rentalRepo, lostItemRepo, nil),
+		Drive: drive,
+		Schedule: service.NewScheduleService(sqlite.NewScheduleRepo(db), scheduler.New(exePath, nil),
+			wmplaylist.New(announceDir)),
+		Player:        playerSvc,
+		Auth:          authSvc,
+		Shifts:        service.NewShiftService(shiftRepo, overrideRepo, nil),
+		Roster:        service.NewRosterService(shiftRepo, overrideRepo, nil),
+		Settings:      settingsSvc,
+		FrontDesk:     service.NewFrontDeskService(rentalRepo, lostItemRepo, nil),
+		Update:        updateSvc,
+		Photos:        mediafile.NewStore(filepath.Join(cfgDir, "photos"), mediafile.PhotoMimes, 0),
+		StartupAction: *action,
+	})
+
+	// 동기화 항목 설정은 매번 읽어, 관리자가 바꾼 값이 즉시 반영되게 한다.
+	app.sync.SetTargetsProvider(func() service.SyncTargets {
+		t, err := settingsSvc.SyncTargets()
+		if err != nil {
+			log.Printf("동기화 항목 설정 조회 실패: %v", err)
+			return service.AllSyncTargets()
+		}
+		return t
+	})
+
+	// 합성기는 설정된 명령을 매번 읽어, 사용자가 바꾼 값이 재시작 없이 반영되게 한다.
+	app.SetSynthesizer(speech.NewSynthesizer(announceDir, func() string {
+		cmd, err := settingsSvc.TTSCommand("") // 빈 기본값 → 합성기가 플랫폼 기본 명령을 쓴다
 		if err != nil {
 			return ""
 		}
-		return v
+		return cmd
 	}))
 
 	err = wails.Run(&options.App{

@@ -15,6 +15,7 @@ type fakeDrive struct {
 	uploads         []string // 호출된 date 기록
 	masterEmployees []domain.Employee
 	masterShifts    []domain.Shift
+	deskCalls       int
 	masterCalls     int
 }
 
@@ -27,6 +28,14 @@ func (f *fakeDrive) UploadMaster(employees []domain.Employee, shifts []domain.Sh
 	f.masterEmployees, f.masterShifts = employees, shifts
 	f.masterCalls++
 	return "https://sheets.example/master", nil
+}
+
+func (f *fakeDrive) UploadDesk(rentals []domain.Rental, items []domain.LostItem) (string, error) {
+	if f.uploadErr != nil {
+		return "", f.uploadErr
+	}
+	f.deskCalls++
+	return "https://sheets.example/desk", nil
 }
 
 func (f *fakeDrive) UploadDay(date string, logs []domain.WorkLog, entries []domain.ChecklistEntry) (string, error) {
@@ -60,7 +69,8 @@ func setupSync(t *testing.T, drive domain.DrivePort) (*SyncService, *sqlite.Work
 		t.Fatal(err)
 	}
 	svc := NewSyncService(wl, sqlite.NewChecklistRepo(db), drive,
-		sqlite.NewEmployeeRepo(db), sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db), nil)
+		sqlite.NewEmployeeRepo(db), sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db),
+		sqlite.NewRentalRepo(db), sqlite.NewLostItemRepo(db), nil)
 	return svc, wl
 }
 
@@ -124,5 +134,42 @@ func TestSyncPendingUploadFailureKeepsPending(t *testing.T) {
 	}
 	if pending, _ := wl.ListPending(); len(pending) != 2 {
 		t.Errorf("pending after failure = %d, want 2 (unchanged)", len(pending))
+	}
+}
+
+// 꺼둔 항목은 업로드하지 않고, 켜둔 항목만 올라가야 한다.
+func TestSyncSkipsDisabledTargets(t *testing.T) {
+	drive := &fakeDrive{authorized: true}
+	svc, _ := setupSync(t, drive)
+	svc.SetTargetsProvider(func() SyncTargets { return SyncTargets{Worklog: true} })
+	res, err := svc.SyncPending()
+	if err != nil {
+		t.Fatalf("SyncPending: %v", err)
+	}
+	if res.Uploaded != 2 {
+		t.Errorf("uploaded=%d, want 2", res.Uploaded)
+	}
+	if drive.masterCalls != 0 || drive.deskCalls != 0 {
+		t.Errorf("master=%d desk=%d, want 0/0", drive.masterCalls, drive.deskCalls)
+	}
+	if res.Master != "" || res.Desk != "" {
+		t.Errorf("URL이 남았다: master=%q desk=%q", res.Master, res.Desk)
+	}
+}
+
+// 근로기록만 꺼도 기준정보·데스크 시트는 계속 갱신되어야 한다.
+func TestSyncWorklogDisabledKeepsOthers(t *testing.T) {
+	drive := &fakeDrive{authorized: true}
+	svc, _ := setupSync(t, drive)
+	svc.SetTargetsProvider(func() SyncTargets { return SyncTargets{Master: true, Desk: true} })
+	res, err := svc.SyncPending()
+	if err != nil {
+		t.Fatalf("SyncPending: %v", err)
+	}
+	if res.Uploaded != 0 || len(drive.uploads) != 0 {
+		t.Errorf("근로기록이 업로드되었다: %d건", res.Uploaded)
+	}
+	if drive.masterCalls != 1 || drive.deskCalls != 1 {
+		t.Errorf("master=%d desk=%d, want 1/1", drive.masterCalls, drive.deskCalls)
 	}
 }

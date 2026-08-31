@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS employees (
 	name TEXT NOT NULL,
 	pin TEXT NOT NULL DEFAULT '',
 	student_id TEXT NOT NULL DEFAULT '',
+	start_date TEXT NOT NULL DEFAULT '',
 	department TEXT NOT NULL DEFAULT '',
 	active INTEGER NOT NULL DEFAULT 1
 );
@@ -87,6 +88,34 @@ CREATE TABLE IF NOT EXISTS shift_overrides (
 	note TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_shift_overrides_date ON shift_overrides(date);
+CREATE TABLE IF NOT EXISTS rentals (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	date TEXT NOT NULL,
+	time TEXT NOT NULL,
+	staff TEXT NOT NULL DEFAULT '',
+	student_id TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	phone TEXT NOT NULL DEFAULT '',
+	place TEXT NOT NULL DEFAULT '',
+	device_no TEXT NOT NULL DEFAULT '',
+	return_date TEXT NOT NULL DEFAULT '',
+	return_time TEXT NOT NULL DEFAULT '',
+	return_staff TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_rentals_date ON rentals(date);
+CREATE TABLE IF NOT EXISTS lost_items (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	type TEXT NOT NULL CHECK (type IN ('found','reported')),
+	date TEXT NOT NULL,
+	item TEXT NOT NULL,
+	feature TEXT NOT NULL DEFAULT '',
+	student_id TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	phone TEXT NOT NULL DEFAULT '',
+	claim_date TEXT NOT NULL DEFAULT '',
+	claim_staff TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_lost_items_date ON lost_items(date);
 CREATE TABLE IF NOT EXISTS app_settings (
 	key TEXT PRIMARY KEY,
 	value TEXT NOT NULL DEFAULT ''
@@ -113,6 +142,7 @@ func Open(path string) (*DB, error) {
 		return nil, err
 	}
 	// 구버전 DB 마이그레이션: 이미 있는 컬럼이면 duplicate column 에러가 나므로 무시한다.
+	_, _ = sqlDB.Exec(`ALTER TABLE employees ADD COLUMN start_date TEXT NOT NULL DEFAULT ''`)
 	_, _ = sqlDB.Exec(`ALTER TABLE schedules ADD COLUMN payload TEXT NOT NULL DEFAULT ''`)
 	_, _ = sqlDB.Exec(`ALTER TABLE schedules ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 1`)
 	_, _ = sqlDB.Exec(`ALTER TABLE employees ADD COLUMN student_id TEXT NOT NULL DEFAULT ''`)

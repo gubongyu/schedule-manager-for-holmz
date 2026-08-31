@@ -2,22 +2,19 @@ package service
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 
 	"holmz/internal/domain"
 )
 
 // ScheduleService 는 스케줄을 로컬 DB와 OS 작업 스케줄러에 함께 반영한다.
 type ScheduleService struct {
-	repo        domain.ScheduleRepo
-	osSched     domain.TaskScheduler
-	announceDir string // 연속 재생용 재생목록(.wpl) 저장 폴더
+	repo     domain.ScheduleRepo
+	osSched  domain.TaskScheduler
+	repeater domain.AudioRepeater // 연속 재생 준비 (재생목록 생성)
 }
 
-func NewScheduleService(repo domain.ScheduleRepo, osSched domain.TaskScheduler, announceDir string) *ScheduleService {
-	return &ScheduleService{repo: repo, osSched: osSched, announceDir: announceDir}
+func NewScheduleService(repo domain.ScheduleRepo, osSched domain.TaskScheduler, repeater domain.AudioRepeater) *ScheduleService {
+	return &ScheduleService{repo: repo, osSched: osSched, repeater: repeater}
 }
 
 func (s *ScheduleService) List() ([]domain.ScheduleItem, error) { return s.repo.List() }
@@ -62,34 +59,12 @@ func (s *ScheduleService) OpenCloseFor(weekday string) (open, close string, err 
 	return open, close, nil
 }
 
-var xmlEscaper = strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;")
-
-// writePlaylist 는 음성 파일을 Repeat 회 나열한 WMP 재생목록(.wpl)을 생성하고 경로를 반환한다.
-func (s *ScheduleService) writePlaylist(item domain.ScheduleItem) (string, error) {
-	if err := os.MkdirAll(s.announceDir, 0o755); err != nil {
-		return "", err
-	}
-	var b strings.Builder
-	b.WriteString("<?wpl version=\"1.0\"?>\n<smil>\n  <head><title>HOLMZ 안내방송</title></head>\n  <body><seq>\n")
-	src := xmlEscaper.Replace(item.Payload)
-	for i := 0; i < item.Repeat; i++ {
-		fmt.Fprintf(&b, "    <media src=\"%s\"/>\n", src)
-	}
-	b.WriteString("  </seq></body>\n</smil>\n")
-	path := filepath.Join(s.announceDir, fmt.Sprintf("schedule_%d.wpl", item.ID))
-	return path, os.WriteFile(path, []byte(b.String()), 0o644)
-}
-
-func (s *ScheduleService) playlistPath(id int64) string {
-	return filepath.Join(s.announceDir, fmt.Sprintf("schedule_%d.wpl", id))
-}
-
 // registerOS 는 OS에 작업을 등록한다. 연속 재생(Repeat>1)이면 재생목록을 만들어 그것을 등록한다.
 func (s *ScheduleService) registerOS(item domain.ScheduleItem) error {
 	if item.ActionType == domain.ActionPlayAudio && item.Repeat > 1 {
-		p, err := s.writePlaylist(item)
+		p, err := s.repeater.Repeat(item.ID, item.Payload, item.Repeat)
 		if err != nil {
-			return fmt.Errorf("재생목록 생성 실패: %w", err)
+			return fmt.Errorf("연속 재생 준비 실패: %w", err)
 		}
 		item.Payload = p
 	}
@@ -122,7 +97,7 @@ func (s *ScheduleService) Add(taskName, runTime string, repeatDays []string, act
 	if active {
 		if err := s.registerOS(*item); err != nil {
 			_ = s.repo.Delete(item.ID)
-			_ = os.Remove(s.playlistPath(item.ID))
+			_ = s.repeater.Discard(item.ID)
 			return nil, err
 		}
 	}
@@ -167,7 +142,7 @@ func (s *ScheduleService) Delete(id int64) error {
 	if err := s.osSched.Unregister(item.TaskName); err != nil {
 		return err
 	}
-	_ = os.Remove(s.playlistPath(id))
+	_ = s.repeater.Discard(id)
 	return s.repo.Delete(id)
 }
 

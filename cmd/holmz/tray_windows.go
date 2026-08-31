@@ -13,6 +13,10 @@ import (
 //go:embed tray.ico
 var trayIcon []byte
 
+// stopTray 는 트레이 메시지 루프를 끝낸다. 이걸 부르지 않으면 runtime.Quit 이후에도
+// 프로세스가 남아, 업데이트로 새로 실행된 프로세스가 싱글 인스턴스 잠금에 걸린다.
+func stopTray() { systray.Quit() }
+
 // startTray 는 시스템 트레이 아이콘을 띄운다 (기획서 2.3: 상시 실행 및 시스템 트레이 상주).
 // Windows에서는 systray 메시지 루프를 별도 goroutine에서 돌릴 수 있다 (macOS 제약 없음).
 func startTray(a *App) {

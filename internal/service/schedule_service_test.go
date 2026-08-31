@@ -1,9 +1,8 @@
 package service
 
 import (
-	"os"
+	"fmt"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"holmz/internal/domain"
@@ -11,7 +10,7 @@ import (
 )
 
 type fakeTaskScheduler struct {
-	registered   []string // TaskName 순서 기록
+	registered   []string              // TaskName 순서 기록
 	items        []domain.ScheduleItem // Register에 전달된 항목 (payload 검증용)
 	unregistered []string
 	failRegister bool
@@ -37,7 +36,28 @@ type fakeRegErr struct{}
 
 func (e *fakeRegErr) Error() string { return "access denied" }
 
+// fakeRepeater 는 연속 재생 준비를 흉내 낸다 (실제 파일은 만들지 않는다).
+type fakeRepeater struct {
+	calls     []string // "id|path|count"
+	discarded []int64
+}
+
+func (f *fakeRepeater) Repeat(id int64, audioPath string, count int) (string, error) {
+	f.calls = append(f.calls, fmt.Sprintf("%d|%s|%d", id, audioPath, count))
+	return fmt.Sprintf("playlist_%d.wpl", id), nil
+}
+
+func (f *fakeRepeater) Discard(id int64) error {
+	f.discarded = append(f.discarded, id)
+	return nil
+}
+
 func setupSchedule(t *testing.T) (*ScheduleService, *fakeTaskScheduler) {
+	svc, os, _ := setupScheduleWithRepeater(t)
+	return svc, os
+}
+
+func setupScheduleWithRepeater(t *testing.T) (*ScheduleService, *fakeTaskScheduler, *fakeRepeater) {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -45,7 +65,8 @@ func setupSchedule(t *testing.T) (*ScheduleService, *fakeTaskScheduler) {
 	}
 	t.Cleanup(func() { db.Close() })
 	f := &fakeTaskScheduler{}
-	return NewScheduleService(sqlite.NewScheduleRepo(db), f, filepath.Join(t.TempDir(), "announce")), f
+	r := &fakeRepeater{}
+	return NewScheduleService(sqlite.NewScheduleRepo(db), f, r), f, r
 }
 
 func TestScheduleAddRegistersActive(t *testing.T) {
@@ -114,67 +135,62 @@ func TestPlayAudioRequiresPayload(t *testing.T) {
 	}
 }
 
-func TestPlayAudioRepeatGeneratesPlaylist(t *testing.T) {
-	svc, f := setupSchedule(t)
+func TestPlayAudioRepeatUsesRepeater(t *testing.T) {
+	svc, f, rep := setupScheduleWithRepeater(t)
 
 	// 6회 이상은 거부
 	if _, err := svc.Add("과다", "21:30", nil, domain.ActionPlayAudio, `C:\audio\a.mp3`, 6, true); err == nil {
 		t.Fatal("repeat > 5 should fail")
 	}
 
-	item, err := svc.Add("마감 안내 2회", "21:30", nil, domain.ActionPlayAudio, `C:\HOLMZ audio\마감 & 안내.mp3`, 2, true)
+	item, err := svc.Add("마감 안내 2회", "21:30", nil, domain.ActionPlayAudio, `C:\HOLMZ audio\마감 안내.mp3`, 2, true)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	// DB에는 원본 경로·횟수가 남는다
-	if item.Payload != `C:\HOLMZ audio\마감 & 안내.mp3` || item.Repeat != 2 {
+	if item.Payload != `C:\HOLMZ audio\마감 안내.mp3` || item.Repeat != 2 {
 		t.Errorf("stored item = %+v", item)
 	}
-	// OS에는 .wpl 재생목록이 등록된다
-	reg := f.items[len(f.items)-1]
-	if !strings.HasSuffix(reg.Payload, ".wpl") {
-		t.Fatalf("registered payload = %q, want .wpl playlist", reg.Payload)
+	// 연속 재생 준비가 원본 경로·횟수로 요청된다
+	want := fmt.Sprintf("%d|%s|2", item.ID, `C:\HOLMZ audio\마감 안내.mp3`)
+	if len(rep.calls) != 1 || rep.calls[0] != want {
+		t.Fatalf("repeater 호출 = %v, want %q", rep.calls, want)
 	}
-	b, err := os.ReadFile(reg.Payload)
-	if err != nil {
-		t.Fatalf("playlist not written: %v", err)
-	}
-	content := string(b)
-	if n := strings.Count(content, "<media "); n != 2 {
-		t.Errorf("playlist media entries = %d, want 2\n%s", n, content)
-	}
-	if !strings.Contains(content, `C:\HOLMZ audio\마감 &amp; 안내.mp3`) {
-		t.Errorf("playlist src not XML-escaped:\n%s", content)
+	// OS에는 준비된 재생 대상이 등록된다
+	if reg := f.items[len(f.items)-1]; reg.Payload != fmt.Sprintf("playlist_%d.wpl", item.ID) {
+		t.Errorf("등록된 payload = %q", reg.Payload)
 	}
 
-	// 토글 재활성화 시에도 재생목록으로 재등록
+	// 토글 재활성화 시에도 다시 준비한다
 	if err := svc.Toggle(item.ID, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.Toggle(item.ID, true); err != nil {
 		t.Fatal(err)
 	}
-	if reg = f.items[len(f.items)-1]; !strings.HasSuffix(reg.Payload, ".wpl") {
-		t.Errorf("re-register payload = %q, want .wpl", reg.Payload)
+	if len(rep.calls) != 2 {
+		t.Errorf("재활성화 시 준비 호출 = %d, want 2", len(rep.calls))
 	}
 
-	// 삭제 시 재생목록 파일도 정리
-	wpl := reg.Payload
+	// 삭제 시 준비물도 정리한다
 	if err := svc.Delete(item.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(wpl); !os.IsNotExist(err) {
-		t.Errorf("playlist should be removed on delete: %v", err)
+	if len(rep.discarded) == 0 || rep.discarded[len(rep.discarded)-1] != item.ID {
+		t.Errorf("정리 호출 = %v, want %d 포함", rep.discarded, item.ID)
 	}
 }
 
 func TestPlayAudioSingleRepeatRegistersDirectPath(t *testing.T) {
-	svc, f := setupSchedule(t)
+	svc, f, rep := setupScheduleWithRepeater(t)
 	if _, err := svc.Add("안내 1회", "21:30", nil, domain.ActionPlayAudio, `C:\audio\a.mp3`, 1, true); err != nil {
 		t.Fatal(err)
 	}
 	if reg := f.items[len(f.items)-1]; reg.Payload != `C:\audio\a.mp3` {
 		t.Errorf("single repeat should register audio path directly: %q", reg.Payload)
+	}
+	if len(rep.calls) != 0 {
+		t.Errorf("1회 재생은 준비가 필요 없습니다: %v", rep.calls)
 	}
 }
 

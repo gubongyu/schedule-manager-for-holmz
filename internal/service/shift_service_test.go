@@ -8,8 +8,9 @@ import (
 	"holmz/internal/repository/sqlite"
 )
 
+// 근무 배치는 편집(ShiftService)과 해석(RosterService)이 짝을 이루므로 함께 검증한다.
 // 2026-08-21은 금요일. 해당 주는 8/17(월) ~ 8/23(일).
-func setupShift(t *testing.T) (*ShiftService, *domain.Employee) {
+func setupShift(t *testing.T) (*ShiftService, *RosterService, *domain.Employee) {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -20,13 +21,13 @@ func setupShift(t *testing.T) (*ShiftService, *domain.Employee) {
 	if err := sqlite.NewEmployeeRepo(db).Create(emp); err != nil {
 		t.Fatal(err)
 	}
-	svc := NewShiftService(sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db),
-		fixedClock("2026-08-21T10:00:00+09:00"))
-	return svc, emp
+	shiftRepo, overrideRepo := sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db)
+	clock := fixedClock("2026-08-21T10:00:00+09:00")
+	return NewShiftService(shiftRepo, overrideRepo, clock), NewRosterService(shiftRepo, overrideRepo, clock), emp
 }
 
 func TestShiftAddValidation(t *testing.T) {
-	svc, emp := setupShift(t)
+	svc, _, emp := setupShift(t)
 
 	if _, err := svc.Add(emp.ID, "MON", "09:00", "18:00"); err != nil {
 		t.Fatalf("valid Add: %v", err)
@@ -46,7 +47,7 @@ func TestShiftAddValidation(t *testing.T) {
 }
 
 func TestShiftWeekViewOrderedAndGrouped(t *testing.T) {
-	svc, emp := setupShift(t)
+	svc, _, emp := setupShift(t)
 	must := func(_ *domain.Shift, err error) {
 		t.Helper()
 		if err != nil {
@@ -77,14 +78,14 @@ func TestShiftWeekViewOrderedAndGrouped(t *testing.T) {
 }
 
 func TestRosterAppliesOverrides(t *testing.T) {
-	svc, emp := setupShift(t)
+	svc, roster, emp := setupShift(t)
 	// 금요일(8/21) 기본 배치
 	if _, err := svc.Add(emp.ID, "FRI", "09:00", "18:00"); err != nil {
 		t.Fatal(err)
 	}
 
 	// 예외 없음 → 기본 배치 그대로
-	r, err := svc.Roster("2026-08-21")
+	r, err := roster.Roster("2026-08-21")
 	if err != nil || len(r.Entries) != 1 || r.Weekday != "FRI" || r.Entries[0].Cover {
 		t.Fatalf("base roster = %+v, err=%v", r, err)
 	}
@@ -93,7 +94,7 @@ func TestRosterAppliesOverrides(t *testing.T) {
 	if _, err := svc.AddOverride(emp.ID, "2026-08-21", domain.OverrideOff, "", "", "여름 휴가", 0); err != nil {
 		t.Fatalf("AddOverride off: %v", err)
 	}
-	r, _ = svc.Roster("2026-08-21")
+	r, _ = roster.Roster("2026-08-21")
 	if len(r.Entries) != 0 || len(r.Off) != 1 || r.Off[0] != "김서연" {
 		t.Errorf("roster with off = %+v", r)
 	}
@@ -102,18 +103,18 @@ func TestRosterAppliesOverrides(t *testing.T) {
 	if _, err := svc.AddOverride(emp.ID, "2026-08-22", domain.OverrideWork, "10:00", "16:00", "추가", 0); err != nil {
 		t.Fatalf("AddOverride work: %v", err)
 	}
-	r, _ = svc.Roster("2026-08-22") // 토요일: 기본 배치 없음
+	r, _ = roster.Roster("2026-08-22") // 토요일: 기본 배치 없음
 	if len(r.Entries) != 1 || !r.Entries[0].Cover || r.Entries[0].Start != "10:00" {
 		t.Errorf("roster with cover = %+v", r)
 	}
 }
 
 func TestAddOverrideValidation(t *testing.T) {
-	svc, emp := setupShift(t)
+	svc, _, emp := setupShift(t)
 	cases := []struct{ date, typ, start, end string }{
-		{"2026/08/21", domain.OverrideOff, "", ""},   // 날짜 형식
-		{"2026-08-21", "vacation", "", ""},           // 유형
-		{"2026-08-21", domain.OverrideWork, "", ""},  // 대타는 시간 필수
+		{"2026/08/21", domain.OverrideOff, "", ""},            // 날짜 형식
+		{"2026-08-21", "vacation", "", ""},                    // 유형
+		{"2026-08-21", domain.OverrideWork, "", ""},           // 대타는 시간 필수
 		{"2026-08-21", domain.OverrideWork, "18:00", "09:00"}, // 시작>=종료
 	}
 	for _, c := range cases {
@@ -124,11 +125,11 @@ func TestAddOverrideValidation(t *testing.T) {
 }
 
 func TestWeekRosterCoversCurrentWeek(t *testing.T) {
-	svc, emp := setupShift(t)
+	svc, roster, emp := setupShift(t)
 	if _, err := svc.Add(emp.ID, "MON", "09:00", "18:00"); err != nil {
 		t.Fatal(err)
 	}
-	week, err := svc.WeekRoster()
+	week, err := roster.WeekRoster()
 	if err != nil || len(week) != 7 {
 		t.Fatalf("WeekRoster = %d days (err=%v), want 7", len(week), err)
 	}
@@ -141,7 +142,7 @@ func TestWeekRosterCoversCurrentWeek(t *testing.T) {
 }
 
 func TestWeekTotalsReflectOverrides(t *testing.T) {
-	svc, emp := setupShift(t)
+	svc, roster, emp := setupShift(t)
 	must := func(_ *domain.Shift, err error) {
 		t.Helper()
 		if err != nil {
@@ -151,7 +152,7 @@ func TestWeekTotalsReflectOverrides(t *testing.T) {
 	must(svc.Add(emp.ID, "MON", "09:00", "18:00")) // 9h
 	must(svc.Add(emp.ID, "FRI", "09:00", "13:30")) // 4.5h
 
-	totals, err := svc.WeekTotals()
+	totals, err := roster.WeekTotals()
 	if err != nil || len(totals) != 1 || totals[0].Hours != 13.5 {
 		t.Fatalf("totals = %+v, err=%v; want 13.5h", totals, err)
 	}
@@ -164,14 +165,14 @@ func TestWeekTotalsReflectOverrides(t *testing.T) {
 	if _, err := svc.AddOverride(emp.ID, "2026-08-22", domain.OverrideWork, "10:00", "12:00", "", 0); err != nil {
 		t.Fatal(err)
 	}
-	totals, _ = svc.WeekTotals()
+	totals, _ = roster.WeekTotals()
 	if len(totals) != 1 || totals[0].Hours != 11 {
 		t.Errorf("totals after overrides = %+v, want 11h", totals)
 	}
 }
 
 // setupShiftTwo 는 직원 2명(김서연, 박준호)이 있는 ShiftService 를 만든다.
-func setupShiftTwo(t *testing.T) (*ShiftService, *domain.Employee, *domain.Employee) {
+func setupShiftTwo(t *testing.T) (*ShiftService, *RosterService, *domain.Employee, *domain.Employee) {
 	t.Helper()
 	db, err := sqlite.Open(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
@@ -186,13 +187,13 @@ func setupShiftTwo(t *testing.T) (*ShiftService, *domain.Employee, *domain.Emplo
 			t.Fatal(err)
 		}
 	}
-	svc := NewShiftService(sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db),
-		fixedClock("2026-08-21T10:00:00+09:00"))
-	return svc, emp, cover
+	shiftRepo, overrideRepo := sqlite.NewShiftRepo(db), sqlite.NewShiftOverrideRepo(db)
+	clock := fixedClock("2026-08-21T10:00:00+09:00")
+	return NewShiftService(shiftRepo, overrideRepo, clock), NewRosterService(shiftRepo, overrideRepo, clock), emp, cover
 }
 
 func TestSubstitutionSplitsOriginalShift(t *testing.T) {
-	svc, emp, cover := setupShiftTwo(t)
+	svc, roster, emp, cover := setupShiftTwo(t)
 
 	// 금요일(8/21) 09~18 기본 배치, 13~15 대타
 	if _, err := svc.Add(emp.ID, "FRI", "09:00", "18:00"); err != nil {
@@ -201,7 +202,7 @@ func TestSubstitutionSplitsOriginalShift(t *testing.T) {
 	if _, err := svc.AddOverride(emp.ID, "2026-08-21", domain.OverrideSub, "13:00", "15:00", "근무 변경", cover.ID); err != nil {
 		t.Fatalf("AddOverride sub: %v", err)
 	}
-	r, err := svc.Roster("2026-08-21")
+	r, err := roster.Roster("2026-08-21")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +221,7 @@ func TestSubstitutionSplitsOriginalShift(t *testing.T) {
 	}
 
 	// 시간 합계: 김서연 7h, 박준호 2h
-	totals, _ := svc.WeekTotals()
+	totals, _ := roster.WeekTotals()
 	byName := map[string]float64{}
 	for _, tt := range totals {
 		byName[tt.Name] = tt.Hours
@@ -231,7 +232,7 @@ func TestSubstitutionSplitsOriginalShift(t *testing.T) {
 }
 
 func TestSubstitutionValidation(t *testing.T) {
-	svc, emp, cover := setupShiftTwo(t)
+	svc, _, emp, cover := setupShiftTwo(t)
 	// 시간 없는 대타 → 실패
 	if _, err := svc.AddOverride(emp.ID, "2026-08-21", domain.OverrideSub, "", "", "", cover.ID); err == nil {
 		t.Error("sub without time should fail")
@@ -247,7 +248,7 @@ func TestSubstitutionValidation(t *testing.T) {
 }
 
 func TestUpcomingOverridesAndRemove(t *testing.T) {
-	svc, emp := setupShift(t)
+	svc, _, emp := setupShift(t)
 	o, err := svc.AddOverride(emp.ID, "2026-08-25", domain.OverrideOff, "", "", "병원", 0)
 	if err != nil {
 		t.Fatal(err)
@@ -269,7 +270,7 @@ func TestUpcomingOverridesAndRemove(t *testing.T) {
 }
 
 func TestShiftUpdate(t *testing.T) {
-	svc, emp := setupShift(t)
+	svc, _, emp := setupShift(t)
 	sh, err := svc.Add(emp.ID, "MON", "09:00", "18:00")
 	if err != nil {
 		t.Fatal(err)
@@ -291,7 +292,7 @@ func TestShiftUpdate(t *testing.T) {
 }
 
 func TestShiftRemove(t *testing.T) {
-	svc, emp := setupShift(t)
+	svc, _, emp := setupShift(t)
 	s, err := svc.Add(emp.ID, "TUE", "10:00", "14:00")
 	if err != nil {
 		t.Fatal(err)

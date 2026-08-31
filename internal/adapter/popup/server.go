@@ -15,6 +15,7 @@ import (
 // PlayerControl 은 팝업 서버가 필요로 하는 재생 서비스 기능이다.
 type PlayerControl interface {
 	ActiveList() ([]domain.PlaylistItem, error)
+	Volume() (int, error)
 	Heartbeat(state string)
 }
 
@@ -45,6 +46,7 @@ func StartServer(player PlayerControl) (*Server, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/player", s.handlePage)
 	mux.HandleFunc("/api/playlist", s.handlePlaylist)
+	mux.HandleFunc("/api/volume", s.handleVolume)
 	mux.HandleFunc("/api/heartbeat", s.handleHeartbeat)
 	mux.HandleFunc("/api/events", s.handleEvents)
 	go http.Serve(ln, mux)
@@ -94,6 +96,17 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(list)
+}
+
+// handleVolume 은 재생 페이지가 시작·재로드 직후 적용할 음량을 알려준다.
+func (s *Server) handleVolume(w http.ResponseWriter, r *http.Request) {
+	v, err := s.player.Volume()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]int{"volume": v})
 }
 
 func (s *Server) handleHeartbeat(w http.ResponseWriter, r *http.Request) {

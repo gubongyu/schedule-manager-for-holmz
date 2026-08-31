@@ -289,6 +289,7 @@ func (a *Adapter) UploadMaster(employees []domain.Employee, shifts []domain.Shif
 	}
 	// 첫 번째 시트 = 직원, 나머지는 이름 있는 시트로 추가한다.
 	ensureSheet(s, ssID, "근무 스케줄")
+	ensureSheet(s, ssID, "대타")
 	ensureSheet(s, ssID, "예외")
 	if err := writeSheet(s, ssID, "", employeeRows(employees)); err != nil {
 		return "", fmt.Errorf("직원 기록 실패: %w", err)
@@ -296,8 +297,41 @@ func (a *Adapter) UploadMaster(employees []domain.Employee, shifts []domain.Shif
 	if err := writeSheet(s, ssID, "근무 스케줄", shiftRows(shifts)); err != nil {
 		return "", fmt.Errorf("근무 스케줄 기록 실패: %w", err)
 	}
+	if err := writeSheet(s, ssID, "대타", substitutionRows(overrides)); err != nil {
+		return "", fmt.Errorf("대타 기록 실패: %w", err)
+	}
 	if err := writeSheet(s, ssID, "예외", overrideRows(overrides)); err != nil {
 		return "", fmt.Errorf("예외 기록 실패: %w", err)
+	}
+	return url, nil
+}
+
+// UploadDesk 는 "HOLMZ 대여·분실물" 스프레드시트에 대여·습득·접수 기록을 갱신한다.
+func (a *Adapter) UploadDesk(rentals []domain.Rental, lostItems []domain.LostItem) (string, error) {
+	ctx := context.Background()
+	d, s, err := a.services(ctx)
+	if err != nil {
+		return "", err
+	}
+	folderID, err := a.findOrCreateFolder(d)
+	if err != nil {
+		return "", fmt.Errorf("Drive 폴더 준비 실패: %w", err)
+	}
+	ssID, url, err := a.findOrCreateSpreadsheet(d, folderID, "HOLMZ_대여·분실물")
+	if err != nil {
+		return "", fmt.Errorf("대여·분실물 시트 준비 실패: %w", err)
+	}
+	// 첫 번째 시트 = HDMI 대여, 나머지는 이름 있는 시트로 추가한다.
+	ensureSheet(s, ssID, "분실물 습득")
+	ensureSheet(s, ssID, "분실물 접수")
+	if err := writeSheet(s, ssID, "", rentalRows(rentals)); err != nil {
+		return "", fmt.Errorf("HDMI 대여 기록 실패: %w", err)
+	}
+	if err := writeSheet(s, ssID, "분실물 습득", foundItemRows(lostItems)); err != nil {
+		return "", fmt.Errorf("분실물 습득 기록 실패: %w", err)
+	}
+	if err := writeSheet(s, ssID, "분실물 접수", reportedItemRows(lostItems)); err != nil {
+		return "", fmt.Errorf("분실물 접수 기록 실패: %w", err)
 	}
 	return url, nil
 }

@@ -30,13 +30,31 @@ func setupServer(t *testing.T) (*Server, *service.PlayerService, *emitRec) {
 		t.Fatal(err)
 	}
 	rec := &emitRec{}
-	player := service.NewPlayerService(repo, rec.emit, nil)
+	player := service.NewPlayerService(repo, sqlite.NewSettingsRepo(db), rec.emit, nil)
 	srv, err := StartServer(player)
 	if err != nil {
 		t.Fatalf("StartServer: %v", err)
 	}
 	t.Cleanup(srv.Close)
 	return srv, player, rec
+}
+
+func TestServerServesVolume(t *testing.T) {
+	srv, player, _ := setupServer(t)
+	if err := player.SetVolume(35); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.Get(srv.base + "/api/volume")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Volume int `json:"volume"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil || body.Volume != 35 {
+		t.Fatalf("/api/volume = %+v, err=%v", body, err)
+	}
 }
 
 func TestServerServesPlaylistAndPage(t *testing.T) {
