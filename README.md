@@ -19,7 +19,7 @@
 올리면 각 PC가 알아서 감지합니다. 태그는 `v1.2.3` 형식으로, 빌드 시 주입한 `main.version` 과
 같은 값을 씁니다.
 
-    sha256sum build/holmz.exe > build/holmz.exe.sha256   # 선택 — 함께 올리면 무결성 검증
+    (cd build && sha256sum holmz.exe > holmz.exe.sha256)   # 선택 — 함께 올리면 무결성 검증
 
 - `holmz.exe.sha256` 자산을 같이 올리면 내려받은 파일을 검증합니다. 없으면 크기만 확인합니다.
 - 저장소가 비공개면 조회가 404로 실패하고 배너는 뜨지 않습니다 (매장 화면에 오류를 띄우지 않음).
