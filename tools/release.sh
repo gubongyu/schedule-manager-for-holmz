@@ -48,7 +48,10 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags desktop,production \
 (cd build && sha256sum holmz.exe > holmz.exe.sha256)
 
 # 주입된 버전이 실제 바이너리에 들어갔는지 확인한다.
-if ! strings build/holmz.exe | grep -qx "$VERSION"; then
+# grep -q 로 조기 종료시키면 strings 가 SIGPIPE 로 죽어 pipefail 에 걸리므로,
+# 입력을 끝까지 읽는 grep -c 를 쓴다 (매치가 없을 때의 종료코드 1은 || true 로 흡수).
+version_hits=$(strings build/holmz.exe | grep -cx -- "$VERSION" || true)
+if [[ "${version_hits:-0}" -eq 0 ]]; then
   echo "오류: 빌드된 exe 에서 $VERSION 문자열을 찾지 못했습니다." >&2
   exit 1
 fi
