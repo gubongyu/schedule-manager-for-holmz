@@ -19,7 +19,16 @@
 올리면 각 PC가 알아서 감지합니다. 태그는 `v1.2.3` 형식으로, 빌드 시 주입한 `main.version` 과
 같은 값을 씁니다.
 
-    (cd build && sha256sum holmz.exe > holmz.exe.sha256)   # 선택 — 함께 올리면 무결성 검증
+    tools/release.sh v1.0.2
+
+이 스크립트가 검사(go vet·go test·프론트 검사) → 빌드 → 체크섬 → 태그까지 한 번에 합니다.
+**버전 문자열을 한 곳에서만 받아 태그와 `-X main.version=` 에 함께 쓰므로 둘이 어긋나지
+않습니다.** 태그와 exe 의 버전이 다르면 자동 업데이트가 잘못 판단합니다.
+
+끝나면 안내되는 두 명령으로 배포합니다.
+
+    git push origin v1.0.2
+    gh release create v1.0.2 build/holmz.exe build/holmz.exe.sha256 --title "v1.0.2" --notes "..."
 
 - `holmz.exe.sha256` 자산을 같이 올리면 내려받은 파일을 검증합니다. 없으면 크기만 확인합니다.
 - 저장소가 비공개면 조회가 404로 실패하고 배너는 뜨지 않습니다 (매장 화면에 오류를 띄우지 않음).
