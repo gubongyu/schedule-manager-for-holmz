@@ -18,7 +18,7 @@ html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
 <div id="p"></div>
 <div id="ov"></div>
 <script>
-let ids = [], idx = 0, player = null, volume = 60;
+let ids = [], idx = 0, player = null, volume = 60, failures = 0;
 const overlay = (msg) => {
   const ov = document.getElementById('ov');
   ov.textContent = msg;
@@ -43,6 +43,15 @@ function applyVolume() {
     if (volume > 0 && player.unMute) player.unMute();
   } catch (e) { }
 }
+// playAt 은 재생목록의 i번째 영상을 재생한다 (범위를 넘으면 처음으로 돌아간다).
+// loadVideoById 는 보통 재생까지 이어지지만 항상 그렇지는 않다. 멈춘 채로 남으면
+// 워치독이 재개를 지시할 때까지 1분 넘게 정지하므로, 재생을 명시적으로 건다
+// (첫 영상은 onReady 에서 같은 일을 한다).
+function playAt(i) {
+  idx = (i + ids.length) % ids.length;
+  player.loadVideoById(ids[idx]);
+  try { player.playVideo(); } catch (e) { }
+}
 function hb(state) {
   fetch('/api/heartbeat', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ state }) }).catch(() => {});
@@ -52,12 +61,20 @@ window.onYouTubeIframeAPIReady = function () {
     videoId: ids[0],
     playerVars: { autoplay: 1, controls: 1, rel: 0 },
     events: {
-      onReady: e => { applyVolume(); e.target.playVideo(); },
+      onReady: e => { player = e.target; applyVolume(); player.playVideo(); },
       onStateChange: e => {
-        if (e.data === YT.PlayerState.ENDED) { idx = (idx + 1) % ids.length; player.loadVideoById(ids[idx]); return; }
+        if (e.data === YT.PlayerState.ENDED) { failures = 0; playAt(idx + 1); return; }
+        if (e.data === YT.PlayerState.PLAYING) failures = 0;
         hb(stateName());
       },
-      onError: () => hb('error'),
+      // 임베드가 막혔거나 삭제된 영상은 그 영상만 건너뛴다. 여기서 'error' 를 보고하면
+      // 워치독이 페이지를 재로드하고, 재로드는 재생목록을 처음부터 다시 시작하므로
+      // 문제가 있는 영상을 영영 지나가지 못한다. 한 바퀴를 돌도록 하나도 재생되지
+      // 않을 때만 워치독에 넘긴다.
+      onError: () => {
+        if (++failures >= ids.length) { failures = 0; hb('error'); return; }
+        playAt(idx + 1);
+      },
     },
   });
 };
